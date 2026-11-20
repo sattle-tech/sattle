@@ -32,8 +32,19 @@
  * what the screen is opened for most.
  */
 
+import { StatusBar } from 'expo-status-bar';
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -158,6 +169,18 @@ export function GroupDetailScreen({
   // Its own header, so it says itself what Android's back button and the browser's do.
   useBack(onBack);
 
+  // Whether the cover is still under the status bar, told to CoverStatusBar as the screen scrolls.
+  const coverHeight = useRef(0);
+  const overCover = useRef<((over: boolean) => void) | null>(null);
+  const onCoverLayout = useCallback((e: LayoutChangeEvent) => {
+    coverHeight.current = e.nativeEvent.layout.height;
+  }, []);
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) =>
+      overCover.current?.(e.nativeEvent.contentOffset.y + insets.top / 2 < coverHeight.current),
+    [insets.top]
+  );
+
   // Drawn from what the app already has (AppData): the group is up the moment it's tapped, and
   // the server is asked behind it. A payment can land while this is open (a guest paying a link,
   // someone else settling up), so it's kept current too, every few seconds, without a loading flash.
@@ -258,7 +281,8 @@ export function GroupDetailScreen({
 
   return (
     <View style={s.screen}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <CoverStatusBar tell={overCover} />
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} onScroll={onScroll} scrollEventThrottle={32}>
         <Cover
           name={data.name}
           line={memberLine}
@@ -266,6 +290,7 @@ export function GroupDetailScreen({
           onBack={onBack}
           onPeople={() => setOver({ kind: 'people' })}
           onManage={onManage}
+          onLayout={onCoverLayout}
         />
 
         <View style={s.body}>
@@ -457,9 +482,28 @@ function listNames(names: string[]): string {
 const remindKey = (userId: string, groupId: string, memberId: string) => `${userId}:${groupId}:${memberId}`;
 
 /**
+ * The status bar's icons, white while the cover is under them like everything
+ * else on it, and the theme's own once the cover has scrolled away. The app's
+ * StatusBar (App.tsx) is the theme's, and comes back when this screen goes.
+ * It keeps its own state, so scrolling draws only this.
+ */
+function CoverStatusBar({ tell }: { tell: React.MutableRefObject<((over: boolean) => void) | null> }) {
+  const dark = useColorMode() === 'dark';
+  const [over, setOver] = useState(true);
+  useEffect(() => {
+    tell.current = setOver;
+    return () => {
+      tell.current = null;
+    };
+  }, [tell]);
+  return <StatusBar style={over || dark ? 'light' : 'dark'} />;
+}
+
+/**
  * The top of the group: its colour, with two shapes and a dotted line drawn
  * on it so it reads as the group's own and not a plain bar, then its letter,
- * name and who is in it. White on every cover holds at least 6:1.
+ * name and who is in it. White on every cover holds at least 6:1, and the
+ * status bar's icons are white on it too (CoverStatusBar).
  */
 function Cover({
   name,
@@ -468,6 +512,7 @@ function Cover({
   onBack,
   onPeople,
   onManage,
+  onLayout,
 }: {
   name: string;
   line: string;
@@ -475,13 +520,14 @@ function Cover({
   onBack: () => void;
   onPeople: () => void;
   onManage: () => void;
+  onLayout: (e: LayoutChangeEvent) => void;
 }) {
   const s = useStyles();
   const insets = useSafeAreaInsets();
   const cover = coverFor(name);
   const over = '#00000029';
   return (
-    <View style={[s.cover, { backgroundColor: cover.bg, paddingTop: insets.top + space.md }]}>
+    <View style={[s.cover, { backgroundColor: cover.bg, paddingTop: insets.top + space.md }]} onLayout={onLayout}>
       <CoverArt cover={cover} />
       <View style={s.coverBar}>
         <Glyph name="back" label="Back to groups" onPress={onBack} ink="#FFFFFF" on={over} weight={2.2} />
