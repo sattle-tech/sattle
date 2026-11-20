@@ -342,7 +342,7 @@ const useStyles = makeStyles((color) => ({
     borderTopColor: color.line,
   },
   splitText: { ...type.label, color: color.inkMuted },
-  splitAmount: { fontFamily: type.amountSm.fontFamily, color: color.ink },
+  splitAmount: { fontFamily: type.amountSm.fontFamily, fontVariant: type.amountSm.fontVariant, color: color.ink },
   groupsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
   groupsTitle: { ...type.heading, color: color.ink },
   link: { minHeight: 44, justifyContent: 'center' },

@@ -1727,7 +1727,7 @@ const useStyles = makeStyles((color) => ({
   standingAmount: { ...type.amountLg, fontSize: 26 },
   standingSub: { fontSize: 13, color: color.inkMuted },
   squareRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  num: { fontFamily: type.amountSm.fontFamily },
+  num: { fontFamily: type.amountSm.fontFamily, fontVariant: type.amountSm.fontVariant },
 
   card: {
     backgroundColor: color.surface,
@@ -1833,7 +1833,7 @@ const useStyles = makeStyles((color) => ({
   tableHead: { backgroundColor: color.surfaceSunken, borderTopWidth: 0 },
   tableHeadText: { fontSize: 12, fontWeight: '600', color: color.inkMuted },
   tableCell: { flex: 1, fontSize: 14, color: color.ink },
-  tableNum: { textAlign: 'right', fontFamily: type.amountSm.fontFamily },
+  tableNum: { textAlign: 'right', fontFamily: type.amountSm.fontFamily, fontVariant: type.amountSm.fontVariant },
   right: { textAlign: 'right' },
   tableStrong: { fontWeight: '600' },
 
