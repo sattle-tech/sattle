@@ -1583,7 +1583,7 @@ function MarkSettled({
   };
 
   return (
-    <View style={[s.under, s.settledUnder]}>
+    <View style={[s.under, !owedToMe && s.settledUnder]}>
       {state === 'asking' ? (
         <View style={s.settledRow}>
           <Text style={s.note}>Settled outside the app? The group’s history will say you marked it.</Text>
@@ -1837,6 +1837,7 @@ const useStyles = makeStyles((color) => ({
   // Lines up under the names: row padding, face, gap.
   under: { marginLeft: space.lg + 32 + space.sm + 2, marginRight: space.md, marginBottom: space.sm, gap: space.xs },
   // Up into the bottom of the row's own height, which has nothing in it there: the link is about that row.
+  // Not on a debt owed to the user: that row has Remind, and the link would lie over the bottom of it.
   settledUnder: { marginTop: -space.md },
   settledRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   rowNote: { ...type.caption, color: color.inkMuted, marginLeft: space.lg + 32 + space.sm + 2, marginBottom: space.sm },

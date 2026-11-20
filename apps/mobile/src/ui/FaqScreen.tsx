@@ -185,7 +185,7 @@ function groupFaqs({ lightning, upi }: PayWays, nostr: boolean): Faq[] {
     {
       question: 'Who can mark a debt settled by hand?',
       answer: [
-        'Anyone in the group, in the app: the person owed, the person paying, or someone else. Every debt in Who pays whom has Mark as settled, which records it with no proof asked. On a debt that isn’t owed to you it asks first, since nothing undoes it.',
+        'Anyone in the group, in the app: the person owed, the person paying, or someone else. Mark as settled records it with no proof asked, and nothing undoes it. On a debt you owe, it’s in the sheet that Pay or Options opens. On any other debt it’s under the debt in Who pays whom, and on one between two other people it asks first.',
         'Someone paying from the group’s link who paid another way, in cash or by UPI to a phone number, can tap Mark as paid there. It needs nothing set up by the person owed, only that they’ve joined, and it counts once they confirm it in the app.',
         'Either way it shows in the group’s history as settled outside the app, with the name of whoever marked it.',
       ],

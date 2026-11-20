@@ -167,10 +167,12 @@ test.describe('paying someone who has joined, over Lightning', () => {
     await intoGroup(a, groupName, 'Settle up');
     const pay = button(debtCard(a.page, 'You pay Priya'), 'Pay');
     await pay.click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('Waiting for payment').or(a.page.getByText('Pay Priya', { exact: true }))).toBeVisible();
     await closeSheet(a.page);
     await expect(a.page.getByText('Waiting for payment')).toBeHidden();
     await pay.click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('A payment for this is already in progress.')).toBeHidden();
     await expect(a.page.getByText('Settled', { exact: true })).toBeVisible({ timeout: 15_000 });
     const proof = (await a.page.getByText(PREIMAGE).textContent())!;
