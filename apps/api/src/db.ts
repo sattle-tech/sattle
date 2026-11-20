@@ -71,14 +71,15 @@ export function seedIfEmpty(db: Db) {
     for (const [id, name] of users) insUser.run(id, name);
 
     const insGroup = db.prepare(
-      'INSERT INTO expense_groups (id, name, currency, created_at, simplify_debts, approve_joins) VALUES (?, ?, ?, ?, ?, ?)'
+      `INSERT INTO expense_groups (id, name, currency, created_at, simplify_debts, approve_joins, created_by_member_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     const insMember = db.prepare(
       `INSERT INTO members (id, group_id, position, display_name, status, claimed_by_user_id, lightning_address)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     for (const g of fixtures.groups) {
-      insGroup.run(g.id, g.name, g.currency, g.createdAt, g.simplifyDebts ? 1 : 0, g.approveJoins ? 1 : 0);
+      insGroup.run(g.id, g.name, g.currency, g.createdAt, g.simplifyDebts ? 1 : 0, g.approveJoins ? 1 : 0, g.createdByMemberId ?? null);
       g.memberIds.forEach((id, position) => {
         const m = fixtures.members.find((x) => x.id === id)!;
         insMember.run(m.id, g.id, position, m.displayName, m.status, m.claimedByUserId ?? null, m.lightningAddress ?? null);

@@ -4,6 +4,15 @@ import { MockClient } from './MockClient';
 
 const client = () => new MockClient({ latencyMs: 0 });
 
+/** Nobody leaves with a debt, so the user marks what they owe and are owed in the group settled first. */
+async function settleUp(c: MockClient, groupId = 'g-goa') {
+  const me = (await c.getMembers(groupId)).find((m) => m.displayName === 'Yash')!.id;
+  for (const d of await c.getDebts(groupId)) {
+    if (d.fromMemberId !== me && d.toMemberId !== me) continue;
+    await c.markSettledManually({ groupId, fromMemberId: d.fromMemberId, toMemberId: d.toMemberId, amount: d.amount });
+  }
+}
+
 /** The group as sync has it. Asked with no version, the answer is never "unchanged". */
 async function synced(c: MockClient, groupId: string) {
   const answer = await c.sync();
@@ -51,6 +60,7 @@ describe('MockClient’s group log, kept as the server keeps it', () => {
     const c = client();
     await c.setApproveJoins('g-goa', false);
     const link = await c.createGroupLink('g-goa');
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     const view = await c.getJoinView(link.token);
     // Yash's phone becomes Om's too, then leaves again: Om was in all along, on his own phone.

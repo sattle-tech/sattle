@@ -250,13 +250,51 @@ describe('PUT /groups/:id', () => {
 });
 
 describe('DELETE /groups/:id', () => {
-  it('is refused while money is owed, so deleting a group can’t erase a debt', async () => {
-    const { call, base, kabir, mRiya, addExpense } = await setup();
-    await addExpense(mRiya, 3000);
+  it('is only for whoever made the group, on any of their devices', async () => {
+    const { call, base, group, riya, kabir, mRiya, signUp, link, joinAs } = await setup();
+    expect(group.createdByMemberId).toBe(mRiya);
+
     const res = await call<{ message: string }>('DELETE', base, undefined, kabir.token);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Only Riya can delete this group, because they made it.');
+    expect((await call('GET', base, undefined, riya.token)).status).toBe(200);
+
+    const laptop = await signUp('Riya');
+    expect((await joinAs('Riya', await link(), laptop.token)).status).toBe(200);
+    expect((await call('DELETE', base, undefined, laptop.token)).status).toBe(200);
+  });
+
+  it('falls to the only account left once whoever made it has gone, and isn’t handed back with their name', async () => {
+    const { call, base, riya, kabir, signUp, link, joinAs } = await setup();
+    const aman = await signUp('Aman');
+    expect((await joinAs('Aman', await link(), aman.token)).status).toBe(200);
+    expect((await call('POST', `${base}/leave`, undefined, riya.token)).status).toBe(200);
+    expect((await call<Group>('GET', base, undefined, kabir.token)).body.createdByMemberId).toBeUndefined();
+
+    const res = await call<{ message: string }>('DELETE', base, undefined, kabir.token);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Whoever made this group has left it, so it can be deleted only by the last person in it.');
+
+    // Whoever picks Riya's name next is in the group as her, and still didn't make it.
+    const other = await signUp('Riya');
+    const token = await link(kabir.token);
+    const ref = (await call<JoinView>('GET', `/join/${token}`)).body.members.find((m) => m.name === 'Riya')!.ref;
+    const asked = await call<{ id: string }>('POST', '/join-requests', { token, ref }, other.token);
+    expect((await call('POST', `/join-requests/${asked.body.id}/approve`, undefined, kabir.token)).status).toBe(200);
+    expect((await call('DELETE', base, undefined, other.token)).status).toBe(400);
+
+    expect((await call('POST', `${base}/leave`, undefined, other.token)).status).toBe(200);
+    expect((await call('POST', `${base}/leave`, undefined, aman.token)).status).toBe(200);
+    expect((await call('DELETE', base, undefined, kabir.token)).status).toBe(200);
+  });
+
+  it('is refused while money is owed, so deleting a group can’t erase a debt', async () => {
+    const { call, base, riya, mRiya, addExpense } = await setup();
+    await addExpense(mRiya, 3000);
+    const res = await call<{ message: string }>('DELETE', base, undefined, riya.token);
     expect(res.status).toBe(409);
     expect(res.body.message).toBe('There’s still money owed in this group. Settle up first.');
-    expect((await call('GET', base, undefined, kabir.token)).status).toBe(200);
+    expect((await call('GET', base, undefined, riya.token)).status).toBe(200);
   });
 
   it('is refused while a payment is under way', async () => {
@@ -271,7 +309,7 @@ describe('DELETE /groups/:id', () => {
     await link();
     await call('DELETE', `${base}/expenses/${cab.id}`, undefined, riya.token);
 
-    expect((await call('DELETE', base, undefined, kabir.token)).status).toBe(200);
+    expect((await call('DELETE', base, undefined, riya.token)).status).toBe(200);
     expect((await call('GET', base, undefined, riya.token)).status).toBe(404);
     expect((await call<Group[]>('GET', '/groups', undefined, kabir.token)).body).toEqual([]);
     for (const table of ['members', 'expenses', 'settlements', 'group_links', 'pay_links', 'expense_changes', 'ledger_entries']) {
@@ -322,14 +360,29 @@ describe('DELETE /groups/:id/members/:memberId', () => {
 });
 
 describe('POST /groups/:id/leave', () => {
-  it('turns the person back into a ghost with the same name and balance, and shuts them out', async () => {
-    const { call, base, kabir, mRiya, mKabir, addExpense, members, debts } = await setup();
+  it('turns the person back into a ghost with the same name, once they’re settled up, and shuts them out', async () => {
+    const { call, base, kabir, mRiya, mKabir, mAman, addExpense, members, debts } = await setup();
     await addExpense(mRiya, 3000);
+    expect((await call('POST', `${base}/settlements/manual`, { fromMemberId: mKabir, toMemberId: mRiya, amount: 1000 }, kabir.token)).status).toBe(201);
 
     expect((await call('POST', `${base}/leave`, undefined, kabir.token)).status).toBe(200);
     expect((await call('GET', base, undefined, kabir.token)).status).toBe(404);
     expect((await members()).find((m) => m.id === mKabir)).toEqual({ id: mKabir, groupId: expect.any(String), displayName: 'Kabir', status: 'ghost', receivable: false });
-    expect(await debts()).toContainEqual(expect.objectContaining({ fromMemberId: mKabir, toMemberId: mRiya, amount: 1000 }));
+    // What others still owe each other is no business of his.
+    expect(await debts()).toMatchObject([{ fromMemberId: mAman, toMemberId: mRiya, amount: 1000 }]);
+  });
+
+  it('is refused while they owe money, or are owed it', async () => {
+    const { call, base, riya, kabir, mRiya, mKabir, addExpense, members } = await setup();
+    await addExpense(mRiya, 3000);
+
+    const owes = await call<{ message: string }>('POST', `${base}/leave`, undefined, kabir.token);
+    expect(owes.status).toBe(409);
+    expect(owes.body.message).toBe('You still owe money in this group. Settle up before you leave.');
+    const owed = await call<{ message: string }>('POST', `${base}/leave`, undefined, riya.token);
+    expect(owed.status).toBe(409);
+    expect(owed.body.message).toBe('You’re still owed money in this group. Settle up before you leave.');
+    expect((await members()).find((m) => m.id === mKabir)?.status).toBe('joined');
   });
 
   it('can be undone with the group’s link', async () => {
@@ -366,6 +419,11 @@ describe('POST /groups/:id/leave', () => {
          SELECT ?, group_id, from_member_id, to_member_id, 100, 'INR', 'invoice', ?, ?, ? FROM settlements WHERE id = 's-open'`
       ).run(id, status, now, now);
     }
+    // What reached him has been paid back, so he owes nothing and is owed nothing.
+    db.prepare(
+      `INSERT INTO settlements (id, group_id, from_member_id, to_member_id, amount, currency, rail, status, created_at, updated_at)
+       SELECT 's-back', group_id, to_member_id, from_member_id, 200, 'INR', 'manual', 'manually_confirmed', ?, ? FROM settlements WHERE id = 's-open'`
+    ).run(now, now);
     expect((await call('POST', `${base}/leave`, undefined, kabir.token)).status).toBe(200);
   });
 });

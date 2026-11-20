@@ -83,6 +83,7 @@ packages/core/src/           @sattle/core: pure, no I/O, imported by both app an
   payLinks.ts                Guest-safe settlement view, NWC method lists.
   groupLinks.ts              The /g/<token> and /join/<token> paths, and finding the link's token in what someone pasted.
   expenseRules.ts            Who may change or remove an expense. The app and the server both ask it.
+  groupRules.ts              Who may delete a group, and when someone may leave one. The app and the server both ask it.
   lightningAddress.ts        Parses what people paste. An address is not an invoice.
   upi.ts                     UPI: parsing an ID, the upi://pay link, and reading what a UPI app hands back.
   nostrLedger.ts             Reading a group's ledger back from Nostr events with its backup key. Imported as @sattle/core/nostrLedger, so only what reads it pulls in nostr-tools.
@@ -466,12 +467,14 @@ One rule runs through all of it: nobody can undo what someone else is owed. `gro
 | Rename a group | Anyone in it | |
 | Turn simplifying debts on or off | Anyone in it | While a payment is under way or a UPI payment hasn't been confirmed, since it can move the debt that payment is for. |
 | Remove a member | Anyone in the group, for a ghost that no expense, payment or pay link names | For anyone in the ledger, and for someone who has joined: only they can leave. |
-| Leave a group | Yourself | If you're the only one with an account (delete the group instead), or while a payment to you is under way. |
-| Delete a group | Anyone in it | While anything is owed in it or a payment is under way, so deleting it can't erase a debt. |
+| Leave a group | Yourself | If you're the only one with an account (delete the group instead), while a payment to you is under way, or while you owe or are owed anything in it. |
+| Delete a group | Whoever made it. Once they have left, the only account still in it. | For anyone else. And while anything is owed in it or a payment is under way, so deleting it can't erase a debt. |
 | Disconnect a wallet | Yourself | While a payment to you is under way: that wallet is what confirms it. |
 | Delete an account | Yourself | While a payment to you is under way. |
 
-Leaving takes the device that leaves out of the group. A member joined from another device too stays joined there. Otherwise the member's row stays, as a ghost, with its name, history and balance, so the others' ledger still adds up; the group's link hands it back.
+Leaving takes the device that leaves out of the group. A member joined from another device too stays joined there, so that device may go with a debt still open. Otherwise the person is leaving, and has to be settled up first: nothing they owe and nothing owed to them (`isSettledUp`). The member's row then stays, as a ghost, with its name and history, so the others' ledger still adds up; the group's link hands it back.
+
+A group keeps who made it (`Group.createdByMemberId`, migration 028), and deleting it is theirs alone, on any device they joined from (`canDeleteGroup` in `@sattle/core`). Everyone else leaves instead. It is the member, not the account, and it isn't handed back with the name: once whoever made the group has left it or deleted their account, nobody made it, and it can be deleted only by the last account still in it. For groups from before the migration, whoever still holds the group's first member made it.
 
 Deleting an account leaves every group that way. A group only that account could open is deleted with it, since nobody could ever reach it again. The token, the wallet connection, the pay links that belong to it and its requests to join are removed; the names its members had in shared groups stay.
 

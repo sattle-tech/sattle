@@ -5,6 +5,15 @@ import { MockClient } from './MockClient';
 /** The seeded demo payment to Yash is in progress for 90s; these start after it lapses. */
 const client = () => new MockClient({ latencyMs: 0 });
 
+/** Nobody leaves with a debt, so the user marks what they owe and are owed in the group settled first. */
+async function settleUp(c: MockClient, groupId = 'g-goa') {
+  const me = (await c.getMembers(groupId)).find((m) => m.displayName === 'Yash')!.id;
+  for (const d of await c.getDebts(groupId)) {
+    if (d.fromMemberId !== me && d.toMemberId !== me) continue;
+    await c.markSettledManually({ groupId, fromMemberId: d.fromMemberId, toMemberId: d.toMemberId, amount: d.amount });
+  }
+}
+
 const yashPaid = async (c: MockClient) => (await c.getExpenses('g-goa')).find((e) => e.paidByMemberId === 'm-goa-yash')!;
 const omPaid = async (c: MockClient) => (await c.getExpenses('g-goa')).find((e) => e.paidByMemberId === 'm-goa-om')!;
 
@@ -70,9 +79,17 @@ describe('MockClient: groups and members', () => {
     await expect(client().deleteGroup('g-goa')).rejects.toMatchObject({ code: 'conflict' });
   });
 
-  it('deletes a group that has nothing owed', async () => {
+  it('won’t delete a group someone else made', async () => {
+    await expect(client().deleteGroup('g-flat')).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: 'Only Om can delete this group, because they made it.',
+    });
+  });
+
+  it('deletes a group the user made that has nothing owed', async () => {
     const c = client();
     const g = await c.createGroup({ name: 'Empty', currency: 'INR', memberNames: ['Dev'] });
+    expect(g.createdByMemberId).toBe(g.memberIds[0]);
     await c.deleteGroup(g.id);
     expect((await c.getGroups()).map((x) => x.id)).not.toContain(g.id);
   });
@@ -87,8 +104,16 @@ describe('MockClient: groups and members', () => {
     await expect(c.removeMember('g-goa', 'm-goa-om')).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
-  it('takes the user out of a group they leave, and leaves their row behind as a ghost', async () => {
+  it('won’t let the user leave a group with a debt in it', async () => {
+    await expect(client().leaveGroup('g-goa')).rejects.toMatchObject({
+      code: 'conflict',
+      message: 'You still owe money in this group. Settle up before you leave.',
+    });
+  });
+
+  it('takes the user out of a group they leave once they’re settled up, and leaves their row behind as a ghost', async () => {
     const c = client();
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     expect((await c.getGroups()).map((g) => g.id)).toEqual(['g-flat']);
     expect((await c.getMembers('g-goa')).find((m) => m.id === 'm-goa-yash')).toEqual({

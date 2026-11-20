@@ -4,6 +4,15 @@ import { MockClient } from './MockClient';
 
 const client = () => new MockClient({ latencyMs: 0 });
 
+/** Nobody leaves with a debt, so the user marks what they owe and are owed in the group settled first. */
+async function settleUp(c: MockClient, groupId = 'g-goa') {
+  const me = (await c.getMembers(groupId)).find((m) => m.displayName === 'Yash')!.id;
+  for (const d of await c.getDebts(groupId)) {
+    if (d.fromMemberId !== me && d.toMemberId !== me) continue;
+    await c.markSettledManually({ groupId, fromMemberId: d.fromMemberId, toMemberId: d.toMemberId, amount: d.amount });
+  }
+}
+
 describe('MockClient joining, with the group’s link', () => {
   it('offers everyone in the group on the join page the group’s link opens, and says who has joined', async () => {
     const c = client();
@@ -40,6 +49,7 @@ describe('MockClient joining, with the group’s link', () => {
     const link = await c.createGroupLink('g-goa');
     expect((await c.getJoinedGroup(link.token))?.id).toBe('g-goa');
 
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     expect(await c.getJoinedGroup(link.token)).toBeNull();
     await expect(c.getJoinedGroup('nope')).rejects.toMatchObject({ code: 'not_found' });
@@ -90,6 +100,7 @@ describe('MockClient joining, with the group’s link', () => {
   it('lets its user ask back into a group they left, and waits for a yes', async () => {
     const c = client();
     const link = await c.createGroupLink('g-goa');
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     const yash = (await c.getJoinView(link.token)).members.find((m) => m.name === 'Yash')!;
     const asked = await c.askToJoin(link.token, { ref: yash.ref });
@@ -106,6 +117,7 @@ describe('MockClient joining, with the group’s link', () => {
     const c = client();
     await c.setApproveJoins('g-goa', false);
     const link = await c.createGroupLink('g-goa');
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     const view = await c.getJoinView(link.token);
     expect(view.approveJoins).toBe(false);
@@ -122,6 +134,7 @@ describe('MockClient joining, with the group’s link', () => {
     const c = client();
     await c.setApproveJoins('g-goa', false);
     const link = await c.createGroupLink('g-goa');
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     // A ghost still waiting to be picked can't be started beside.
     await expect(c.join(link.token, { displayName: 'aman' })).rejects.toMatchObject({ code: 'conflict' });
@@ -133,6 +146,7 @@ describe('MockClient joining, with the group’s link', () => {
   it('won’t let anyone straight into a group that approves joins: Goa trip asks', async () => {
     const c = client();
     const link = await c.createGroupLink('g-goa');
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     const view = await c.getJoinView(link.token);
     expect(view.approveJoins).toBe(true);
@@ -148,6 +162,7 @@ describe('MockClient joining, with the group’s link', () => {
     const c = client();
     await c.setApproveJoins('g-goa', false);
     const link = await c.createGroupLink('g-goa');
+    await settleUp(c);
     await c.leaveGroup('g-goa');
     const om = (await c.getJoinView(link.token)).members.find((m) => m.name === 'Om')!;
     expect(om.joined).toBe(true);

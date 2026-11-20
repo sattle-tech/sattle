@@ -81,6 +81,12 @@ export interface Group {
    * group can change it, except while a payment is under way.
    */
   simplifyDebts: boolean;
+  /**
+   * The member who made the group. Only they can delete it, on any of their
+   * devices (canDeleteGroup). Absent once they have left it or deleted their
+   * account: a group nobody made goes only when one account is left in it.
+   */
+  createdByMemberId?: string;
 }
 
 export type SplitMode = 'equal' | 'shares' | 'exact';

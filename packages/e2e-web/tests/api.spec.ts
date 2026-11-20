@@ -384,34 +384,46 @@ test.describe('Groups', () => {
     expect(r.message).toBe('A payment someone said they made in this group hasn’t been confirmed yet. Wait until it has.');
   });
 
-  test('a group is deleted only once nothing is owed and no payment is under way', async ({ api }) => {
+  test('a group is deleted only by whoever made it, once nothing is owed and no payment is under way', async ({ api }) => {
     const { A, B, aMember, bMember, group, amount } = await yashOwesPriya(api);
+    expect(group.createdByMemberId).toBe(aMember.id);
+    const notHers = await refused(B.del(`/groups/${group.id}`));
+    expect(notHers.status).toBe(400);
+    expect(notHers.message).toBe('Only Yash can delete this group, because they made it.');
     const owed = await refused(A.del(`/groups/${group.id}`));
     expect(owed.status).toBe(409);
     expect(owed.message).toBe('There’s still money owed in this group. Settle up first.');
     const s = await A.post<Settlement>(`/groups/${group.id}/settlements`, { fromMemberId: aMember.id, toMemberId: bMember.id, amount, rail: 'invoice' });
-    const paying = await refused(B.del(`/groups/${group.id}`));
+    const paying = await refused(A.del(`/groups/${group.id}`));
     expect(paying.status).toBe(409);
     expect(paying.message).toBe('A payment in this group is still in progress. Wait for it to finish.');
     await untilStatus(A, s.id, 'confirmed');
     expect(await A.debts(group.id)).toEqual([]);
-    await B.del(`/groups/${group.id}`);
+    await A.del(`/groups/${group.id}`);
     expect(await A.groups()).toEqual([]);
     expect(await B.groups()).toEqual([]);
   });
 
-  test('leaving: not the last account, not with a payment incoming; the member stays as a ghost', async ({ api }) => {
+  test('leaving: not the last account, not with a debt, not with a payment incoming; the member stays as a ghost', async ({ api }) => {
     const { A, B, aMember, bMember, group, amount } = await yashOwesPriya(api);
     const alone = await A.createGroup({ name: 'Solo', memberNames: ['Ghost'] });
     const last = await refused(A.post(`/groups/${alone.id}/leave`));
     expect(last.status).toBe(409);
     expect(last.message).toBe('You’re the only one here with an account. Delete the group instead.');
 
-    await A.post(`/groups/${group.id}/settlements`, { fromMemberId: aMember.id, toMemberId: bMember.id, amount, rail: 'invoice' });
+    const owes = await refused(A.post(`/groups/${group.id}/leave`));
+    expect(owes.status).toBe(409);
+    expect(owes.message).toBe('You still owe money in this group. Settle up before you leave.');
+    const owed = await refused(B.post(`/groups/${group.id}/leave`));
+    expect(owed.status).toBe(409);
+    expect(owed.message).toBe('You’re still owed money in this group. Settle up before you leave.');
+
+    const s = await A.post<Settlement>(`/groups/${group.id}/settlements`, { fromMemberId: aMember.id, toMemberId: bMember.id, amount, rail: 'invoice' });
     const incoming = await refused(B.post(`/groups/${group.id}/leave`));
     expect(incoming.status).toBe(409);
     expect(incoming.message).toBe('A payment to you is still in progress. Wait for it to finish.');
-    // The payer may leave meanwhile: nothing is on its way to them.
+    // Once it has landed nobody owes anything, and the payer may go.
+    await untilStatus(A, s.id, 'confirmed');
     await A.post(`/groups/${group.id}/leave`);
     expect((await A.groups()).map((g) => g.id)).toEqual([alone.id]);
     const left = await refused(A.group(group.id));

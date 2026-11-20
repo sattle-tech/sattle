@@ -164,11 +164,13 @@ describe('/me/upi', () => {
   });
 
   it('goes with the person when they leave the group, so whoever joins as that name next starts without it', async () => {
-    const { db, call, base, kabir, group, mKabir } = await setup();
+    const { db, call, base, kabir, group, mRiya, mKabir } = await setup();
     await call('PUT', `/me/upi/group-links/${group.id}`, { on: false }, kabir.token);
     const stored = () => db.prepare('SELECT upi_on_link FROM members WHERE id = ?').get(mKabir);
     expect(stored()).toEqual({ upi_on_link: 0 });
 
+    // He settles what he owes Riya for the cab first: nobody leaves with a debt.
+    expect((await call('POST', `${base}/settlements/manual`, { fromMemberId: mKabir, toMemberId: mRiya, amount: 1000 }, kabir.token)).status).toBe(201);
     expect((await call('POST', `${base}/leave`, undefined, kabir.token)).status).toBe(200);
     expect(stored()).toEqual({ upi_on_link: null });
   });
@@ -605,8 +607,12 @@ describe('declining and taking back', () => {
 
 describe('claims and people going', () => {
   it('drops a claim when either person leaves the group', async () => {
-    const { call, claim, base, kabir, count } = await setup();
+    const { call, claim, base, riya, kabir, count } = await setup();
     await claim();
+    // Nobody leaves with a debt. The cab goes, so nobody owes anything, and the claim is left behind about a debt that isn't there.
+    const [cab] = (await call<{ id: string }[]>('GET', `${base}/expenses`, undefined, riya.token)).body;
+    expect((await call('DELETE', `${base}/expenses/${cab.id}`, undefined, riya.token)).status).toBe(200);
+    expect(count('upi_claims')).toBe(1);
     expect((await call('POST', `${base}/leave`, undefined, kabir.token)).status).toBe(200);
     expect(count('upi_claims')).toBe(0);
   });

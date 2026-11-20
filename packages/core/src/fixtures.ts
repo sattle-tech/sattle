@@ -25,6 +25,7 @@ export const groups: Group[] = [
     approveJoins: true,
     createdAt: at(12),
     simplifyDebts: true,
+    createdByMemberId: 'm-goa-yash',
   },
   {
     id: 'g-flat',
@@ -34,6 +35,8 @@ export const groups: Group[] = [
     approveJoins: false,
     createdAt: at(40),
     simplifyDebts: true,
+    // Om's, so the demo has a group the user can leave but not delete.
+    createdByMemberId: 'm-flat-om',
   },
 ];
 

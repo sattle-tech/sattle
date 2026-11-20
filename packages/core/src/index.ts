@@ -8,6 +8,7 @@ export * from './quote';
 export * from './payLinks';
 export * from './groupLinks';
 export * from './expenseRules';
+export * from './groupRules';
 export * from './members';
 export * from './settlementState';
 export { parseLightningAddress, type ParsedAddress } from './lightningAddress';
