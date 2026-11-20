@@ -67,12 +67,13 @@ test.describe('the rails, once the payee has a UPI ID', () => {
     const balance = button(a.page, 'Pay from your balance');
     await expect(ancestor(balance, 2).getByText('The wallet needs the mobile app.')).toBeVisible();
     await expect(ancestor(balance, 1)).toHaveCSS('opacity', '0.4');
+    // Anyone in the group can mark it settled, the payer too.
     const manual = button(a.page, 'Mark as settled');
-    await expect(ancestor(manual, 2).getByText('Only Priya can confirm a payment made outside the app.')).toBeVisible();
-    await expect(ancestor(manual, 1)).toHaveCSS('opacity', '0.4');
+    await expect(manual).toBeVisible();
+    await expect(ancestor(manual, 1)).not.toHaveCSS('opacity', '0.4');
     // Tapping a greyed-out rail does nothing. A forced tap doesn't scroll to it, so that's done first.
-    await manual.scrollIntoViewIfNeeded();
-    await manual.click({ force: true });
+    await balance.scrollIntoViewIfNeeded();
+    await balance.click({ force: true });
     await expect(a.page.getByText('Pay Priya ₹300')).toBeVisible();
     await expect(a.page.getByText('Settled', { exact: true })).toBeHidden();
   });
@@ -307,7 +308,7 @@ test.describe('a payer who uses only rupees', () => {
     await expect(ancestor(upi, 1)).toHaveCSS('background-color', ACCENT);
     await expect(button(a.page, 'Pay with Lightning')).toBeHidden();
     await expect(button(a.page, 'Pay from your balance')).toBeHidden();
-    await expect(ancestor(button(a.page, 'Mark as settled'), 2).getByText('Only Priya can confirm a payment made outside the app.')).toBeVisible();
+    await expect(button(a.page, 'Mark as settled')).toBeVisible();
     await upi.click();
     await expect(a.page.getByText('Pay Priya by UPI')).toBeVisible();
     await button(a.page, 'I’ve paid').click();

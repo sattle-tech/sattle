@@ -197,7 +197,7 @@ export class MockClient implements SattleClient {
     return g;
   }
 
-  /** Same rules as the server's checkPayer and checkManualRecorder. */
+  /** The server's rules: only the payer pays (checkPayer); anyone in the group may mark a debt settled. */
   private checkCaller(input: { fromMemberId: string; toMemberId: string }, as: 'payer' | 'manual') {
     const me = fixtures.currentUser.id;
     const payer = this.members.find((m) => m.id === input.fromMemberId);
@@ -205,10 +205,6 @@ export class MockClient implements SattleClient {
     if (!payer || !payee) throw new SattleError('not_found', 'That member isn’t in this group.');
     if (as === 'payer' && !isHeldBy(payer, me)) {
       throw new SattleError('invalid_input', `Only ${payer.displayName} can pay this.`);
-    }
-    if (as === 'manual' && !isHeldBy(payee, me) && (payee.claimedByUserId || !isHeldBy(payer, me))) {
-      const who = payee.claimedByUserId ? payee : payer;
-      throw new SattleError('invalid_input', `Only ${who.displayName} can mark this as settled.`);
     }
   }
 

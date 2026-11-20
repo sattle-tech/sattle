@@ -920,32 +920,30 @@ test.describe('Settlements', () => {
     await untilStatus(A, s.id, 'confirmed');
   });
 
-  test('marking settled by hand: the payee’s word, or the payer’s for a ghost', async ({ api }) => {
+  test('marking settled by hand: anyone in the group, keeping who did', async ({ api }) => {
     const { A, B, aMember, bMember, group, amount } = await yashOwesPriya(api, 10_000, { people: ['Priya', 'Aman'] });
     const aman = await A.memberNamed(group.id, 'Aman');
     await spend(A, group, { description: 'Cab', amount: 400, paidBy: aman, between: [aMember, aman] });
     const path = `/groups/${group.id}/settlements/manual`;
 
-    const payer = await refused(A.post(path, { fromMemberId: aMember.id, toMemberId: bMember.id, amount }));
-    expect(payer.status).toBe(400);
-    expect(payer.message).toBe('Only Priya can mark this as settled.');
-    const bystander = await refused(B.post(path, { fromMemberId: aMember.id, toMemberId: aman.id, amount: 200 }));
-    expect(bystander.status).toBe(400);
-    expect(bystander.message).toBe('Only Yash can mark this as settled.');
     const longNote = await refused(B.post(path, { fromMemberId: aMember.id, toMemberId: bMember.id, amount, note: 'n'.repeat(201) }));
     expect(longNote.status).toBe(400);
     expect(longNote.message).toMatch(/^note: /);
 
+    // The payee, the payer, and someone who is neither.
     const part = await B.post<Settlement>(path, { fromMemberId: aMember.id, toMemberId: bMember.id, amount: 4000, note: 'cash' });
     expect(part).toMatchObject({ rail: 'manual', status: 'manually_confirmed', amount: 4000, note: 'cash', recordedByMemberId: bMember.id });
     expect((await A.debts(group.id)).find((d) => d.toMemberId === bMember.id)!.amount).toBe(6000);
-    const ghostPayee = await A.post<Settlement>(path, { fromMemberId: aMember.id, toMemberId: aman.id, amount: 200 });
-    expect(ghostPayee).toMatchObject({ status: 'manually_confirmed', recordedByMemberId: aMember.id });
-    expect(ghostPayee.note).toBeUndefined();
-    const tooMuch = await refused(B.post(path, { fromMemberId: aMember.id, toMemberId: bMember.id, amount: 6001 }));
+    const byPayer = await A.post<Settlement>(path, { fromMemberId: aMember.id, toMemberId: bMember.id, amount: 1000 });
+    expect(byPayer).toMatchObject({ status: 'manually_confirmed', amount: 1000, recordedByMemberId: aMember.id });
+    expect((await A.debts(group.id)).find((d) => d.toMemberId === bMember.id)!.amount).toBe(5000);
+    const bystander = await B.post<Settlement>(path, { fromMemberId: aMember.id, toMemberId: aman.id, amount: 200 });
+    expect(bystander).toMatchObject({ status: 'manually_confirmed', recordedByMemberId: bMember.id });
+    expect(bystander.note).toBeUndefined();
+    const tooMuch = await refused(B.post(path, { fromMemberId: aMember.id, toMemberId: bMember.id, amount: 5001 }));
     expect(tooMuch.message).toBe('That’s more than is owed. Refresh and try again.');
     const history = await A.history(group.id);
-    expect(history.filter((h) => h.kind === 'settled').map((h) => h.byMemberId)).toEqual([aMember.id, bMember.id]);
+    expect(history.filter((h) => h.kind === 'settled').map((h) => h.byMemberId)).toEqual([bMember.id, aMember.id, bMember.id]);
   });
 
   test('nothing settles a debt by hand while an invoice for it is still out', async ({ api }) => {

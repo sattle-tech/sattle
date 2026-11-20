@@ -12,8 +12,11 @@
  *    simplified into as few payments as there can be once the group turns
  *    that on (it starts off), which is switched under Manage alone. Its line
  *    says what simplifying would save. The user's own rows act:
- *    Pay on what they owe; Remind, a payment to confirm (by UPI, or marked as
- *    paid on the group's link), and Mark as settled on what they're owed.
+ *    Pay on what they owe; Remind, and a payment to confirm (by UPI, or marked
+ *    as paid on the group's link), on what they're owed. Every other row has
+ *    Mark as settled, for a debt settled outside the app: anyone in the group
+ *    may record that, and the history says who did. The payer has it in the
+ *    sheet Pay opens.
  * 4. Activity: the expenses by day, each with what it meant for the user.
  *    See all opens the full history, which has payments and changes too.
  *
@@ -569,8 +572,9 @@ function Cover({
 /**
  * One debt in Who pays whom. The user's own act: what they owe has Pay, or
  * Options when the person can't be paid here yet; what they're owed has
- * Remind, a payment someone says they made to answer when there is one, and
- * Mark as settled.
+ * Remind, and a payment someone says they made to answer when there is one.
+ * Every debt but the user's own has Mark as settled, unless a payment someone
+ * says they made is waiting on it. The user's own has it behind Pay.
  */
 function DebtRow({
   debt,
@@ -653,9 +657,8 @@ function DebtRow({
           onToast={onToast}
         />
       )}
-      {/* Nothing to send from here: they pay from the group's link, under Add people. */}
-      {mineIn && !claimWaiting && <MarkSettled debt={debt} onSettled={onChanged} held={held} />}
       {cannotReceive && payee && <Text style={s.rowNote}>{cannotReceiveNote(payee, mode, ways)}</Text>}
+      {!mineOut && !claimWaiting && <MarkSettled debt={debt} owedToMe={mineIn} onSettled={onChanged} held={held} />}
     </View>
   );
 }
@@ -1536,17 +1539,28 @@ function AddMember({
 }
 
 /**
- * The payee's side of "paid in cash". Only they can record it for someone
- * who has joined, so this is where it lives; the payer's sheet tells them to
- * ask. One tap: it is their money, so it is their word to give, and the
- * history says whose it was.
+ * "Paid another way": a debt settled outside the app, in cash or let go.
+ * Anyone in the group may record it, and the history says who did. On what's
+ * owed to the user it is one tap, since it is their money to give. Anyone
+ * else's debt asks first: nothing undoes a settlement, and a stray tap would
+ * wipe out what someone is owed.
  */
-function MarkSettled({ debt, onSettled, held }: { debt: Debt; onSettled: () => void; held: () => boolean }) {
+function MarkSettled({
+  debt,
+  owedToMe,
+  onSettled,
+  held,
+}: {
+  debt: Debt;
+  owedToMe: boolean;
+  onSettled: () => void;
+  held: () => boolean;
+}) {
   const s = useStyles();
   const client = useClient();
   const appData = useAppData();
   const keys = useActionKeys();
-  const [state, setState] = useState<'idle' | 'busy' | { failed: string }>('idle');
+  const [state, setState] = useState<'idle' | 'asking' | 'busy' | { failed: string }>('idle');
 
   const settle = async () => {
     if (held()) return;
@@ -1569,13 +1583,30 @@ function MarkSettled({ debt, onSettled, held }: { debt: Debt; onSettled: () => v
   };
 
   return (
-    <View style={s.under}>
-      <View style={s.settledRow}>
-        <Text style={s.note}>Paid you another way?</Text>
-        <Pressable onPress={settle} disabled={state === 'busy'} accessibilityRole="button" style={s.linkBtn}>
-          <Text style={[s.link, state === 'busy' && { opacity: 0.4 }]}>Mark as settled</Text>
-        </Pressable>
-      </View>
+    <View style={[s.under, s.settledUnder]}>
+      {state === 'asking' ? (
+        <View style={s.settledRow}>
+          <Text style={s.note}>Settled outside the app? The group’s history will say you marked it.</Text>
+          <Pressable onPress={settle} accessibilityRole="button" style={s.linkBtn}>
+            <Text style={s.link}>Yes, it’s settled</Text>
+          </Pressable>
+          <Pressable onPress={() => setState('idle')} accessibilityRole="button" style={s.linkBtn}>
+            <Text style={[s.link, s.muted]}>Cancel</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={s.settledRow}>
+          <Text style={s.note}>{owedToMe ? 'Paid you another way?' : 'Paid another way?'}</Text>
+          <Pressable
+            onPress={owedToMe ? settle : () => !held() && setState('asking')}
+            disabled={state === 'busy'}
+            accessibilityRole="button"
+            style={s.linkBtn}
+          >
+            <Text style={[s.link, state === 'busy' && { opacity: 0.4 }]}>Mark as settled</Text>
+          </Pressable>
+        </View>
+      )}
       {typeof state === 'object' && <Text style={s.error}>{state.failed}</Text>}
     </View>
   );
@@ -1805,6 +1836,8 @@ const useStyles = makeStyles((color) => ({
   debtAmount: { ...type.amountMd, fontSize: 15, fontWeight: '600' },
   // Lines up under the names: row padding, face, gap.
   under: { marginLeft: space.lg + 32 + space.sm + 2, marginRight: space.md, marginBottom: space.sm, gap: space.xs },
+  // Up into the bottom of the row's own height, which has nothing in it there: the link is about that row.
+  settledUnder: { marginTop: -space.md },
   settledRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   rowNote: { ...type.caption, color: color.inkMuted, marginLeft: space.lg + 32 + space.sm + 2, marginBottom: space.sm },
   claim: {

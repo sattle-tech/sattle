@@ -165,11 +165,10 @@ describe('resolveSettlementOptions', () => {
     expect(o.rails[0].rail).toBe('lightning_address');
   });
 
-  it('leaves marking it settled to a payee who has joined', () => {
+  it('lets the payer mark it settled, whether or not the payee has joined', () => {
     const om: Member = { id: 'm-om', groupId: 'g', displayName: 'Om', status: 'joined', claimedByUserId: 'u-om' };
     const manual = resolveSettlementOptions({ recipient: om, walletAvailable: true }).rails.find((r) => r.rail === 'manual');
-    expect(manual?.availability.available).toBe(false);
-    expect(manual?.detail).toContain('Om');
+    expect(manual?.availability.available).toBe(true);
 
     const ghostManual = resolveSettlementOptions({ recipient: ghost, walletAvailable: true }).rails.find((r) => r.rail === 'manual');
     expect(ghostManual?.availability.available).toBe(true);

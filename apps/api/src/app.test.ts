@@ -170,19 +170,20 @@ describe('who may settle', () => {
     expect(res.body.code).toBe('invalid_input');
   });
 
-  it('won’t let the payer mark a joined payee as paid', async () => {
+  it('lets the payer mark it settled, keeping who did', async () => {
     const d = await debt('g-goa', 'm-goa-yash', 'm-goa-om');
-    const res = await call<{ code: string; message: string }>('POST', '/groups/g-goa/settlements/manual', d);
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain('Om');
-    expect(await debt('g-goa', 'm-goa-yash', 'm-goa-om')).toBeDefined();
+    const res = await call<Settlement>('POST', '/groups/g-goa/settlements/manual', d);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ rail: 'manual', status: 'manually_confirmed', recordedByMemberId: 'm-goa-yash' });
+    expect(await debt('g-goa', 'm-goa-yash', 'm-goa-om')).toBeUndefined();
   });
 
-  it('won’t let a third member mark someone else’s debt', async () => {
+  it('lets anyone in the group mark someone else’s debt settled, keeping who did', async () => {
     // Priya owes Aman (a ghost); Yash is neither of them.
     const d = await debt('g-goa', 'm-goa-priya', 'm-goa-aman');
-    const res = await call('POST', '/groups/g-goa/settlements/manual', d);
-    expect(res.status).toBe(400);
+    const res = await call<Settlement>('POST', '/groups/g-goa/settlements/manual', d);
+    expect(res.status).toBe(201);
+    expect(res.body.recordedByMemberId).toBe('m-goa-yash');
   });
 
   it('lets the payee mark it, and the payer when the payee is a ghost', async () => {

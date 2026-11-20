@@ -9,7 +9,7 @@ import { minor, parse } from '../http';
 import { receivable } from '../payments';
 import { idempotency } from '../middleware';
 import { applyProof, ProofBody, readPreimage } from '../proof';
-import { checkManualRecorder, checkNoPaymentUnderWay, checkPayer, checkSettlement, debtsOf, inProgressFor, newSettlement } from '../settlementRules';
+import { checkNoPaymentUnderWay, checkPayer, checkSettlement, debtsOf, inProgressFor, newSettlement } from '../settlementRules';
 
 const SettlementBody = z.object({
   fromMemberId: z.string(),
@@ -63,7 +63,7 @@ export function settlementRoutes({ db, repo, payments }: Ctx) {
   });
 
   /**
-   * The payee records it; the payer only when the payee is a ghost. See checkManualRecorder. Whoever does is kept with it.
+   * Anyone in the group may record it, the payer included. Whoever does is kept with it, and the history names them.
    *   a Lightning payment for it is under way → 409 conflict: it could still
    *                                             be paid, and then it's paid twice
    * Settling all that's owed answers a UPI payment someone said they made for
@@ -76,7 +76,6 @@ export function settlementRoutes({ db, repo, payments }: Ctx) {
     const settlement = transaction(db, () => {
       const owed = debtsOf(repo, g).find((d) => d.fromMemberId === body.fromMemberId && d.toMemberId === body.toMemberId);
       checkSettlement(repo, g, body);
-      checkManualRecorder(repo, body, user.id);
       checkNoPaymentUnderWay(repo, g, body);
       if (owed && body.amount >= owed.amount) repo.dropUpiClaimFor({ groupId: g.id, ...body });
       return repo.insertSettlement({

@@ -745,9 +745,9 @@ export function AppearancePicker() {
  *   Is it paid          payments/lightning.ts confirms on the wallet's `settled`, and
  *                       keeps the preimage only if preimageMatches; an address
  *                       payment needs a matching preimage (lnurl.ts verify,
- *                       proof.ts); the manual route lets the payee settle a debt by
- *                       hand (the payer, if the payee is a ghost):
- *                       settlementRules.ts checkManualRecorder; routes/upi.ts: a
+ *                       proof.ts); the manual route lets anyone in the group settle
+ *                       a debt by hand, keeping who (routes/settlements.ts
+ *                       recordedByMemberId); routes/upi.ts: a
  *                       claim is a row in upi_claims, not a settlement, and the
  *                       payee's confirm makes one; so does /upi-payments, where the
  *                       payer's phone passes on a UPI app's success (Android only:
@@ -788,7 +788,7 @@ export function TrustModel({ ways }: { ways: PayWays }) {
     lightning
       ? 'A Lightning payment counts as paid when the payee’s own wallet says the invoice was settled, or with the payment proof: a code the payer’s wallet gets when it pays, which matches the invoice and can’t be made up.'
       : 'Sattle can’t see money move, so a debt is settled on someone’s word, not proof.',
-    'Mark as settled is the word of the person who is owed, or of the payer when the one owed hasn’t joined.',
+    'Anyone in the group can mark a debt as settled. It’s their word, and the group’s history says who it was.',
     upi &&
       // An iPhone hears nothing from a UPI app, and the App Store turns down an app that names Android.
       (Platform.OS === 'ios'

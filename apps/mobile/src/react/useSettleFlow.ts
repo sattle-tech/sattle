@@ -1,7 +1,7 @@
 /**
  * One settle attempt, from the sheet opening to a terminal state.
  *
- *   opening ──one way to pay──▶ as if it had been chosen
+ *   opening (until the server says which payments it makes)
  *      │
  *      ▼
  *   choosing ──choose(rail)──▶ paying ──confirmed──▶ done
@@ -41,10 +41,8 @@
  * recipient shows remedies before the user commits to anything. Only the ways
  * to pay that go with the currencies the payer uses are among them (payWays).
  *
- * With one way to pay there is nothing to ask, so the sheet opens on it
- * (onlyRail): Lightning for someone who gave no UPI ID. It does that once.
- * After a failure or a step back the payer gets the button, and decides when
- * to try again.
+ * It always asks, even with one way to pay: Mark as settled is there beside
+ * it, for a debt settled outside the app.
  */
 
 import * as Clipboard from 'expo-clipboard';
@@ -53,7 +51,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   groupLinkPath,
   liveInvoiceFor,
-  onlyRail,
   parseLightningAddress,
   parseUpiReference,
   resolveSettlementOptions,
@@ -92,7 +89,7 @@ export interface UpiSession {
 
 export interface SettleFlow {
   step: SettleStep;
-  /** The sheet has just opened and isn't asking anything yet: there may be only one way to pay, which it starts. */
+  /** The server hasn't yet said which payments it makes, so there is nothing to ask yet. */
   opening: boolean;
   options: SettlementOptions | null;
   /** Which ways to pay this payer is shown here: what they use, and what this group can be settled in. */
@@ -189,8 +186,6 @@ export function useSettleFlow(debt: Debt, members: Member[], groupName: string, 
   const [paidByHand, setPaidByHand] = useState(false);
   const unsub = useRef<(() => void) | null>(null);
   const upiApp = useBackFromUpi();
-  const [opening, setOpening] = useState(true);
-  const opened = useRef(false);
   const live = useRef(true);
 
   useEffect(
@@ -338,16 +333,6 @@ export function useSettleFlow(debt: Debt, members: Member[], groupName: string, 
       unsub.current = client.onSettlementUpdate(s.id, onUpdate);
     });
 
-  // Once the server has said which payments it makes: start the one way to pay, or ask.
-  useEffect(() => {
-    if (pending || opened.current) return;
-    opened.current = true;
-    const only = options ? onlyRail(options) : null;
-    if (!only) return setOpening(false);
-    void choose(only).then(() => live.current && setOpening(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending]);
-
   // The app's name only when they were sent to one: "I've paid" out of nowhere names none.
   const report = async (reference?: string) => {
     const input = {
@@ -361,7 +346,7 @@ export function useSettleFlow(debt: Debt, members: Member[], groupName: string, 
 
   return {
     step,
-    opening,
+    opening: pending,
     options,
     ways,
     settlement,
