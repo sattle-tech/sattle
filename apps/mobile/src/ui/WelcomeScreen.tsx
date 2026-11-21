@@ -247,8 +247,8 @@ function SignInWithKey({ onReady, onBack }: { onReady: (token: string) => void; 
           autoFocus
         />
         <Text style={s.note}>
-          On the device you’re already signed in on, it’s under Account, Use this account elsewhere. Both devices stay
-          signed in as you.
+          On the device you’re already signed in on, it’s under Account, Sign-in key. Both devices stay signed in as
+          you.
         </Text>
       </Card>
 
