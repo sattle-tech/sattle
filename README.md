@@ -345,6 +345,8 @@ An account can have a Nostr key linked to it (**Account → Sign in with Nostr**
 
 The app never sees the private key. It asks the person's own signer to sign a proof: a browser extension (NIP-07, `window.nostr`, web only) or a remote signer they point it at with a `bunker://` link (NIP-46: nsec.app, Amber, their own bunker). The proof is an HTTP-auth event shaped as NIP-98 has it (kind 27235, the URL and method as tags) plus a `challenge` tag from `POST /auth/nostr/challenge`. The server (`nostrAuth.ts`) checks the signature, the kind, that it was made in the last five minutes, that it names the route it was sent to, and last that the challenge is one it handed out, unused and unexpired, which uses it up. A proof can't be replayed, and one made for linking can't sign in.
 
+Talking to a remote signer takes random bytes, for the app's throwaway key and each message's nonce, and nostr-tools gets them from `crypto.getRandomValues`. Hermes, the phone apps' JavaScript engine, has no `crypto`, so `src/randomValues.native.ts` puts `expo-crypto`'s, from the OS, there before anything else loads. Browsers have their own.
+
 - `POST /auth/nostr/challenge`: public, `{ challenge, expiresAt }`, good once for five minutes.
 - `POST /auth/nostr`: public, `{ event }` → `{ user, token }`, the account's current sign-in key. `404` if no account has the key linked. No idempotency key: a replay on a public route would hand the token to whoever repeated it.
 - `POST /me/nostr`: `{ event }` links the key that signed it, answering the User with its `npub`. `409` if another account has it. Linking another replaces it.
