@@ -49,7 +49,16 @@
       "./plugins/withIosSceneLifecycle",
       "./plugins/withIosReleaseSigning",
       ["expo-secure-store", { "faceIDPermission": false }],
-      ["expo-navigation-bar", { "enforceContrast": false }]
+      ["expo-navigation-bar", { "enforceContrast": false }],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ]
   }
 }
