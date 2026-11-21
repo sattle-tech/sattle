@@ -199,8 +199,10 @@ export function createRepo(db: Db) {
     setSimplifyDebts: db.prepare('UPDATE expense_groups SET simplify_debts = ? WHERE id = ?'),
     setApproveJoins: db.prepare('UPDATE expense_groups SET approve_joins = ? WHERE id = ?'),
     insertGroup: db.prepare(
-      'INSERT INTO expense_groups (id, name, currency, created_at, simplify_debts) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO expense_groups (id, name, currency, created_at, simplify_debts, created_by_member_id) VALUES (?, ?, ?, ?, ?, ?)'
     ),
+    // Whoever made the group stops being its creator once they're a ghost again (Group.createdByMemberId).
+    forgetCreator: db.prepare('UPDATE expense_groups SET created_by_member_id = NULL WHERE created_by_member_id = ?'),
     memberForUser: db.prepare(`${MEMBERS} WHERE members.group_id = ? AND ${HELD_BY}`),
     membersOfGroup: db.prepare(`${MEMBERS} WHERE members.group_id = ? ORDER BY members.position`),
     memberById: db.prepare(`${MEMBERS} WHERE members.id = ?`),
@@ -445,6 +447,7 @@ export function createRepo(db: Db) {
         approveJoins: r.approve_joins === 1,
         createdAt: r.created_at as string,
         simplifyDebts: r.simplify_debts === 1,
+        ...(r.created_by_member_id ? { createdByMemberId: r.created_by_member_id as string } : {}),
       };
     },
 
@@ -468,7 +471,7 @@ export function createRepo(db: Db) {
 
     /** A new group lets people in by its link without a yes, until someone in it says otherwise. */
     insertGroup(g: Omit<Group, 'memberIds' | 'approveJoins'>) {
-      q.insertGroup.run(g.id, g.name, g.currency, g.createdAt, g.simplifyDebts ? 1 : 0);
+      q.insertGroup.run(g.id, g.name, g.currency, g.createdAt, g.simplifyDebts ? 1 : 0, g.createdByMemberId ?? null);
     },
     renameGroup(id: string, name: string) {
       q.renameGroup.run(name, id);
@@ -539,12 +542,16 @@ export function createRepo(db: Db) {
       }
       q.refreshLinked.run(id);
     },
-    /** The reverse of joining: the member is a ghost again, with its name, history and balance. The group's link can hand it back. */
+    /**
+     * The reverse of joining: the member is a ghost again, with its name, history and balance. The group's link can hand it back.
+     * Having made the group isn't handed back with it: whoever picks the name next didn't make it.
+     */
     unclaimMember(id: string) {
       // A UPI claim is between two people with accounts: one made it, the other confirms it.
       q.deleteUpiClaimsOfMember.run(id, id);
       q.removeAccountsOf.run(id);
       q.unclaimMember.run(id);
+      q.forgetCreator.run(id);
     },
     /** Takes the user off every member they are, in every group (removeAccount). */
     unclaimAllOf(userId: string) {

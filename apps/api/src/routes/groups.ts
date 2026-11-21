@@ -92,12 +92,14 @@ export function groupRoutes({ db, repo, wallets, payments }: Ctx) {
   /**
    * The creator becomes member 0, claimed by them; everyone in memberNames is
    * a ghost. The creator is `joined`, or `nwc_linked` if they already
-   * connected a wallet, like the members they have in other groups.
+   * connected a wallet, like the members they have in other groups. The
+   * group keeps who made it (Group.createdByMemberId): only they can delete it.
    */
   r.post('/groups', once, async (c) => {
     const user = c.get('user');
     const body = parse(CreateGroupBody, await c.req.json());
     const groupId = newId('g');
+    const creatorId = newId('m');
     const creatorStatus = wallets.connection(user.id).connected ? 'nwc_linked' : 'joined';
 
     transaction(db, () => {
@@ -107,8 +109,9 @@ export function groupRoutes({ db, repo, wallets, payments }: Ctx) {
         currency: body.currency,
         createdAt: nowIso(),
         simplifyDebts: body.simplifyDebts,
+        createdByMemberId: creatorId,
       });
-      repo.appendMember({ id: newId('m'), groupId, displayName: user.displayName, status: creatorStatus, claimedByUserId: user.id });
+      repo.appendMember({ id: creatorId, groupId, displayName: user.displayName, status: creatorStatus, claimedByUserId: user.id });
       for (const displayName of body.memberNames) {
         repo.appendMember({ id: newId('m'), groupId, displayName, status: 'ghost' });
       }
@@ -150,14 +153,17 @@ export function groupRoutes({ db, repo, wallets, payments }: Ctx) {
   });
 
   /**
-   * Deletes the group and everything in it, for everyone. Anyone in it can,
-   * but only once nothing is owed and no payment is under way (409 conflict
+   * Deletes the group and everything in it, for everyone. Only whoever made
+   * it can, on any of their devices; once they have left, the only account
+   * still in it can (400 invalid_input for anyone else, canDeleteGroup). And
+   * only once nothing is owed and no payment is under way (409 conflict
    * otherwise), so deleting a group can't erase what someone is owed.
    */
   r.delete('/groups/:id', once, (c) => {
-    const g = repo.groupForUser(c.req.param('id'), c.get('user').id);
+    const user = c.get('user');
+    const g = repo.groupForUser(c.req.param('id'), user.id);
     transaction(db, () => {
-      checkGroupCanGo(repo, g);
+      checkGroupCanGo(repo, g, user.id);
       repo.deleteGroup(g.id);
     });
     return c.json({ ok: true });
@@ -165,8 +171,9 @@ export function groupRoutes({ db, repo, wallets, payments }: Ctx) {
 
   /**
    * The caller's member becomes a ghost again and they lose the group. Their
-   * name, history and balance stay; the group's link can bring them back. 409 for
-   * the only person with an account, or while a payment to them is under way.
+   * name and history stay; the group's link can bring them back. 409 for
+   * the only person with an account, while a payment to them is under way,
+   * or while they owe or are owed anything in the group.
    */
   r.post('/groups/:id/leave', once, (c) => {
     const user = c.get('user');

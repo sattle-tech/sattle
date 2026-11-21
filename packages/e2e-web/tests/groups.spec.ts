@@ -516,7 +516,7 @@ test.describe('Manage', () => {
     await expect(button(page, 'Leave this group')).toHaveCount(0);
   });
 
-  test('leaving keeps your name and your expenses in the group for the others', async ({ person }) => {
+  test('leaving waits until you’re settled up, then keeps your name and your expenses in the group for the others', async ({ person }) => {
     const alice = await person('Alice');
     const bob = await person('Bob');
     const { group } = await alice.api.seedGroup({ name: 'Trip', people: ['Bob'] });
@@ -527,18 +527,54 @@ test.describe('Manage', () => {
     await groupTab(alice.page, 'Members');
     await expect(memberRow(alice.page, 'Bob').getByText('Joined', { exact: true })).toBeVisible();
 
+    // Alice owes Bob ₹30, so he can't leave yet. And the group is Alice's to delete: she made it.
     await openManage(bob.page);
-    await expect(button(bob.page, 'Delete this group')).toHaveCount(0); // Alice owes Bob ₹30
+    await expect(bob.page.getByText('Only Alice can delete this group, because they made it.')).toBeVisible();
+    await expect(button(bob.page, 'Delete this group')).toHaveCount(0);
+    await expect(bob.page.getByText('Settle up before you leave.')).toBeVisible();
+    await expect(button(bob.page, 'Leave this group')).toHaveCount(0);
+    const leave = section(bob.page, 'Leave');
+    await button(leave, 'Learn more').click();
+    await expect(
+      leave.getByText('You can leave once you owe nothing in this group and nothing is owed to you, so that leaving can’t leave a debt behind.')
+    ).toBeVisible();
+
+    // Once it's settled the screen offers it, by itself.
+    const [debt] = await bob.api.debts(group.id);
+    await bob.api.markSettled({ groupId: group.id, fromMemberId: debt.fromMemberId, toMemberId: debt.toMemberId, amount: debt.amount });
+    await expect(button(bob.page, 'Leave this group')).toBeVisible({ timeout: 15_000 });
     await button(bob.page, 'Leave this group').click();
-    await expect(bob.page.getByText('Anything owed to you can then be marked settled by whoever owes it.')).toBeVisible();
+    await expect(bob.page.getByText('You’ll stop seeing this group.')).toBeVisible();
     await button(bob.page, 'Yes, leave').click();
     await expect(bob.page.getByText('What are you splitting?')).toBeVisible();
     expect(await bob.api.groups()).toHaveLength(0);
 
     await expect(memberRow(alice.page, 'Bob').getByText('Hasn’t joined · pays from links')).toBeVisible({ timeout: 15_000 });
     await expect(alice.page.getByText('In this group · 2')).toBeVisible();
-    await expect(memberRow(alice.page, 'Bob').getByText('gets back')).toBeVisible();
-    await expect(memberRow(alice.page, 'Bob').getByText('₹30')).toBeVisible();
+    await expect(memberRow(alice.page, 'Bob').getByText('settled', { exact: true })).toBeVisible();
+    expect((await alice.api.expenses(group.id)).map((e) => e.description)).toEqual(['Cab']);
+  });
+
+  test('once whoever made a group has left it, the last person in it can delete it', async ({ person }) => {
+    const alice = await person('Alice');
+    const bob = await person('Bob');
+    const { group } = await alice.api.seedGroup({ name: 'Trip', people: ['Bob'] });
+    await joinAs(alice, group.id, bob, 'Bob');
+
+    await goToGroup(alice.page, 'Trip');
+    await openManage(alice.page);
+    await button(alice.page, 'Leave this group').click();
+    await expect(alice.page.getByText('You made this group. Once you leave, only the last person in it can delete it.')).toBeVisible();
+    await button(alice.page, 'Yes, leave').click();
+    await expect(alice.page.getByText('What are you splitting?')).toBeVisible();
+
+    await goToGroup(bob.page, 'Trip');
+    await openManage(bob.page);
+    await expect(bob.page.getByText('Only you have an account here, so delete the group instead.')).toBeVisible({ timeout: 15_000 });
+    await button(bob.page, 'Delete this group').click();
+    await button(bob.page, 'Yes, delete it for everyone').click();
+    await expect(bob.page.getByText('What are you splitting?')).toBeVisible();
+    expect(await bob.api.groups()).toHaveLength(0);
   });
 
   test('a group with money owed in it can’t be deleted', async ({ person }) => {

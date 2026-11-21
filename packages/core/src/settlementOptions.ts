@@ -6,10 +6,9 @@
  * that was never going to work. Here, a recipient with nowhere to receive
  * produces a `blocked` result naming them, with remedies instead of rails.
  *
- * `manual` is present in every result. A ledger that can't record "paid in
- * cash" is punitive. But it's the payee's word to give: when they've joined,
- * the payer sees it unavailable and is told to ask them. The server enforces
- * the same rule (checkManualRecorder in apps/api).
+ * `manual` is present in every result, and always available. A ledger that
+ * can't record "paid in cash" is punitive. Anyone in the group may mark a debt
+ * settled, the payer included; the history says who did.
  *
  * What counts as "can receive" depends on the server's payment backend.
  * Simulated payments take anyone who joined or has an address. Real payments
@@ -108,7 +107,6 @@ export function resolveSettlementOptions({
   /** Whether UPI could pay a debt in this group at all, as far as this payer is concerned. */
   const upiHere = ways.upi && currency === UPI_CURRENCY;
   const upi = upiHere && Boolean(recipient.upi && recipient.claimedByUserId);
-  const name = recipient.displayName;
   const candidates: Array<Omit<RailOption, 'rank'>> = [];
 
   if (lightning && recipient.status === 'joined' && !real) {
@@ -151,20 +149,11 @@ export function resolveSettlementOptions({
     });
   }
 
-  candidates.push(
-    recipient.claimedByUserId
-      ? {
-          rail: 'manual',
-          label: 'Mark as settled',
-          detail: `Paid another way? Ask ${name} to mark it settled.`,
-          availability: { available: false, reason: `Only ${name} can confirm a payment made outside the app.` },
-        }
-      : {
-          rail: 'manual',
-          label: 'Mark as settled',
-          availability: { available: true },
-        }
-  );
+  candidates.push({
+    rail: 'manual',
+    label: 'Mark as settled',
+    availability: { available: true },
+  });
 
   // Available rails first, preserving preference order within each group.
   const ordered = [
@@ -180,22 +169,6 @@ export function resolveSettlementOptions({
   return { rails };
 }
 
-/**
- * The one way to pay, when there is nothing to choose between. The sheet opens
- * on it instead of asking. Null when the payer has a choice, or is blocked.
- *
- * Only ever the Lightning invoice, where starting moves nothing: it waits to
- * be paid. Never UPI, which would throw the payer into another app the moment
- * they tap Pay, so they're asked first even when it's the only way. Never
- * `manual`, and never one that pays from the balance.
- */
-export function onlyRail(options: SettlementOptions): 'invoice' | null {
-  if (options.blocked) return null;
-  const available = options.rails.filter((r) => r.availability.available);
-  if (available.length !== 1) return null;
-  return available[0].rail === 'invoice' ? 'invoice' : null;
-}
-
 /** `ways` is what could pay this debt at all, for this payer: the message asks the recipient for one of those. */
 function blockedFor(recipient: Member, mode: PaymentMode, ways: PayWays): NonNullable<SettlementOptions['blocked']> {
   const name = recipient.displayName;
@@ -203,8 +176,8 @@ function blockedFor(recipient: Member, mode: PaymentMode, ways: PayWays): NonNul
   if (!ways.lightning) {
     if (recipient.claimedByUserId) {
       return {
-        message: `${name} hasn't added a UPI ID yet, so there's nowhere to pay them here. Ask them to add one from Account in Sattle. If you paid another way, ask them to mark it settled.`,
-        remedies: ['remind'],
+        message: `${name} hasn't added a UPI ID yet, so there's nowhere to pay them here. Ask them to add one from Account in Sattle. Or mark it settled if you paid another way.`,
+        remedies: ['remind', 'mark_settled'],
       };
     }
     return {
@@ -218,13 +191,13 @@ function blockedFor(recipient: Member, mode: PaymentMode, ways: PayWays): NonNul
       remedies: ['add_address', 'invite', 'mark_settled'],
     };
   }
-  // They have the app, so only they can connect a wallet or confirm a payment made another way.
+  // They have the app, so only they can connect a wallet.
   if (recipient.claimedByUserId) {
     return {
       message: `${name} hasn't set up a way to get paid yet. Ask them to ${
         ways.upi ? 'add a UPI ID, connect a wallet' : 'connect a wallet'
-      } or add their Lightning address from Account in Sattle. If you paid another way, ask them to mark it settled.`,
-      remedies: ['remind'],
+      } or add their Lightning address from Account in Sattle. Or mark it settled if you paid another way.`,
+      remedies: ['remind', 'mark_settled'],
     };
   }
   return {

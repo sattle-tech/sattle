@@ -83,6 +83,7 @@ packages/core/src/           @sattle/core: pure, no I/O, imported by both app an
   payLinks.ts                Guest-safe settlement view, NWC method lists.
   groupLinks.ts              The /g/<token> and /join/<token> paths, and finding the link's token in what someone pasted.
   expenseRules.ts            Who may change or remove an expense. The app and the server both ask it.
+  groupRules.ts              Who may delete a group, and when someone may leave one. The app and the server both ask it.
   lightningAddress.ts        Parses what people paste. An address is not an invoice.
   upi.ts                     UPI: parsing an ID, the upi://pay link, and reading what a UPI app hands back.
   nostrLedger.ts             Reading a group's ledger back from Nostr events with its backup key. Imported as @sattle/core/nostrLedger, so only what reads it pulls in nostr-tools.
@@ -394,7 +395,7 @@ A copy from Xcode with the app's team gets the links too; one signed by any othe
 
 A rupee debt can also be paid over UPI, outside Lightning. Someone adds their UPI ID under **Account**; whoever owes them in a group kept in INR then sees **Pay by UPI** in the settle sheet, unless they have turned rupees off (see [First launch and currencies](#first-launch-and-currencies)).
 
-The payer is only asked when there is something to choose. **Pay by UPI** is offered only for someone who has added a UPI ID. Without one, **Pay** opens straight on the Lightning invoice (`onlyRail`). It never opens a UPI app by itself: someone who takes UPI and has no wallet still gets **Pay by UPI** to tap. Neither is required of anyone: an account is only a name. Someone with neither can't be paid here yet, and whoever owes them is told so and can remind them. An invoice still out for the debt, from the sheet before it was closed or from a pay link, is picked up, not asked for a second time, since the server makes one at a time.
+The payer is always asked, even with one way to pay, since **Mark as settled** is there beside it. **Pay by UPI** is offered only for someone who has added a UPI ID. It never opens a UPI app by itself: someone who takes UPI and has no wallet still gets **Pay by UPI** to tap. Neither is required of anyone: an account is only a name. Someone with neither can't be paid here yet, and whoever owes them is told so and can remind them, or mark it settled if they paid another way. An invoice still out for the debt, from the sheet before it was closed or from a pay link, is picked up when the payer taps **Pay with Lightning**, not made a second time, since the server makes one at a time.
 
 What happens with UPI depends on the device, because only Android lets an app hear back from a UPI app:
 
@@ -402,7 +403,7 @@ What happens with UPI depends on the device, because only Android lets an app he
 - **iPhone.** iOS can't list the phone's apps, and a `upi://pay` link goes to whichever UPI app iOS picks, which nobody can change. So the sheet looks for the UPI apps it knows by their URL schemes (Google Pay, PhonePe, Paytm, CRED, BHIM, YONO SBI and Navi, in `IPHONE_UPI_APPS` in `src/upi/upiApps.ts`; each scheme also has to be under `LSApplicationQueriesSchemes` in `app.json`, or iOS always answers no) and lists the ones it finds. An iPhone can't read another app's icon, so each shows its App Store icon, from one request to Apple's public lookup that names every app on the list (initials if Apple doesn't answer within 3 seconds). On an iPhone only CRED was seen taking the link (November 2026), so only CRED is opened on it, on its own scheme with the same payee, amount and note; every other app gets the UPI ID copied and is opened plain, as Google Pay and PhonePe are on Android. A UPI app says nothing back, so when the payer returns the sheet asks whether it went through. With none of those apps on the phone, the sheet has one button that opens the plain `upi://pay` link.
 - **Web.** The same link as a QR code to scan from a phone, then **I’ve paid**.
 
-Sattle never learns that the money moved. No bank or UPI app tells a third party that one person paid another. The payer's word is therefore a **claim** (`upi_claims`), not a settlement, and it moves no balance. The person owed sees "Kabir says they paid you ₹500 by UPI", with the reference when there is one, and either confirms it, which makes it a settlement (`rail: upi`, `manually_confirmed`), or says it didn't arrive, which the payer is then shown. It is the same rule as marking a debt settled by hand: the person it costs if it's false is the one who says so.
+Sattle never learns that the money moved. No bank or UPI app tells a third party that one person paid another. The payer's word is therefore a **claim** (`upi_claims`), not a settlement, and it moves no balance. The person owed sees "Kabir says they paid you ₹500 by UPI", with the reference when there is one, and either confirms it, which makes it a settlement (`rail: upi`, `manually_confirmed`), or says it didn't arrive, which the payer is then shown. Marking a debt settled by hand is different: anyone in the group can, the payer included, and the group's history names whoever did.
 
 **The exception: a UPI app that says it went through.** On Android the UPI app hands back one line when it closes (`parseUpiResponse` reads it): a status, its transaction ID, the bank's approval reference, and the link's own reference when the link asked for one. When the status is `SUCCESS`, the payer's phone passes that on (`POST /groups/:id/upi-payments`) and the debt is settled on the spot: a settlement with `rail: upi`, already `manually_confirmed`, with those ids and the name of the app it was paid in (`paidWith`) kept on it (`settlements.upi_receipt`, migration 021). The person owed is asked nothing, and nothing undoes it. The payer's sheet says **Settled** and shows the ids, and so does the entry in the group's history. A claim that was waiting on the same debt goes.
 
@@ -458,7 +459,7 @@ Opening the wallet is the phone's job, not ours. The button is a `lightning:` li
 
 ### Changing and removing
 
-One rule runs through all of it, the same one settling follows: nobody can undo what someone else is owed. `groupRules.ts` holds it, and the app only offers what the server would accept.
+One rule runs through all of it: nobody can undo what someone else is owed. `groupRules.ts` holds it, and the app only offers what the server would accept. Marking a debt settled is outside it: anyone in the group can, and the history names whoever did.
 
 | What | Who | When it's refused |
 | --- | --- | --- |
@@ -466,12 +467,14 @@ One rule runs through all of it, the same one settling follows: nobody can undo 
 | Rename a group | Anyone in it | |
 | Turn simplifying debts on or off | Anyone in it | While a payment is under way or a UPI payment hasn't been confirmed, since it can move the debt that payment is for. |
 | Remove a member | Anyone in the group, for a ghost that no expense, payment or pay link names | For anyone in the ledger, and for someone who has joined: only they can leave. |
-| Leave a group | Yourself | If you're the only one with an account (delete the group instead), or while a payment to you is under way. |
-| Delete a group | Anyone in it | While anything is owed in it or a payment is under way, so deleting it can't erase a debt. |
+| Leave a group | Yourself | If you're the only one with an account (delete the group instead), while a payment to you is under way, or while you owe or are owed anything in it. |
+| Delete a group | Whoever made it. Once they have left, the only account still in it. | For anyone else. And while anything is owed in it or a payment is under way, so deleting it can't erase a debt. |
 | Disconnect a wallet | Yourself | While a payment to you is under way: that wallet is what confirms it. |
 | Delete an account | Yourself | While a payment to you is under way. |
 
-Leaving takes the device that leaves out of the group. A member joined from another device too stays joined there. Otherwise the member's row stays, as a ghost, with its name, history and balance, so the others' ledger still adds up; the group's link hands it back. One consequence to know: once the person owed is a ghost, the one who owes can mark the debt settled, as with any ghost.
+Leaving takes the device that leaves out of the group. A member joined from another device too stays joined there, so that device may go with a debt still open. Otherwise the person is leaving, and has to be settled up first: nothing they owe and nothing owed to them (`isSettledUp`). The member's row then stays, as a ghost, with its name and history, so the others' ledger still adds up; the group's link hands it back.
+
+A group keeps who made it (`Group.createdByMemberId`, migration 028), and deleting it is theirs alone, on any device they joined from (`canDeleteGroup` in `@sattle/core`). Everyone else leaves instead. It is the member, not the account, and it isn't handed back with the name: once whoever made the group has left it or deleted their account, nobody made it, and it can be deleted only by the last account still in it. For groups from before the migration, whoever still holds the group's first member made it.
 
 Deleting an account leaves every group that way. A group only that account could open is deleted with it, since nobody could ever reach it again. The token, the wallet connection, the pay links that belong to it and its requests to join are removed; the names its members had in shared groups stay.
 

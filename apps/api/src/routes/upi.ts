@@ -6,7 +6,7 @@
  * see the payment, since no bank or app tells a third party that one person
  * paid another, so a claim moves nothing. The person owed confirms it, which
  * makes it a settlement like "mark as settled", or says it didn't arrive.
- * It is the payee's word to give, the same rule as checkManualRecorder.
+ * It is the payee's word to give: only they can see whether it arrived.
  *
  * There is one case where nobody is asked. On Android the UPI app that was
  * opened to pay hands back what happened, and when it says the payment went

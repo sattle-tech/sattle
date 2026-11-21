@@ -44,7 +44,7 @@ A group keeps its expenses in its own currency, rupees by default, because that'
 
 ### UPI and cash still count, as claims
 
-Not everyone settles in sats. In a rupee group, someone who adds a UPI ID can be paid by UPI. On Android the app opens a UPI app and hears back. On an iPhone or the web the payer gets the UPI ID or a QR code, then taps **I've paid**. Sattle can't see a bank transfer, so that's a claim, not a payment, and it moves no balance until the person owed confirms it. Cash works the same way: the person owed marks the debt settled. The person paying can't mark their own debt paid, and nobody else in the group can either. The one exception is a friend who never joined: they have no account to confirm with, so the person paying them can record it. The app always shows claims separately from Lightning payments that come with proof.
+Not everyone settles in sats. In a rupee group, someone who adds a UPI ID can be paid by UPI. On Android the app opens a UPI app and hears back. On an iPhone or the web the payer gets the UPI ID or a QR code, then taps **I've paid**. Sattle can't see a bank transfer, so that's a claim, not a payment, and it moves no balance until the person owed confirms it. Cash is simpler: anyone in the group can mark a debt settled, the person paying included, and the group's history names whoever did. The app always shows claims separately from Lightning payments that come with proof.
 
 ### Joining, and when it needs a yes
 

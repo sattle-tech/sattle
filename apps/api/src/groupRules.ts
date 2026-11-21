@@ -7,11 +7,22 @@
  * They follow the same idea as settlementRules: nobody can undo what someone
  * else is owed. So an expense is the payer's to change, a group with money
  * still owed in it can't be deleted, and a member who is part of the ledger
- * can't be removed from it. What someone can always do is take themselves
- * out, and their row stays behind as a ghost with its balance.
+ * can't be removed from it. Deleting a group is for whoever made it. Everyone
+ * else takes themselves out, once they are settled up, and their row stays
+ * behind as a ghost with its name and history.
  */
 
-import { SattleError, canChangeExpense, type Expense, type Group, type Member, type User } from '@sattle/core';
+import {
+  SattleError,
+  accountsOf,
+  canChangeExpense,
+  canDeleteGroup,
+  isSettledUp,
+  type Expense,
+  type Group,
+  type Member,
+  type User,
+} from '@sattle/core';
 
 import type { Repo } from './repo';
 import { debtsOf, isInProgress, liveClaims } from './settlementRules';
@@ -54,19 +65,44 @@ export function checkMemberCanGo(repo: Repo, g: Group, member: Member) {
 /**
  * The user's account leaves the group. Their member stays with any other
  * device they joined from; with none, it becomes a ghost again, keeping its
- * name, history and balance, and the group's link can hand it back. The last
+ * name and history, and the group's link can hand it back. The last
  * account can't leave, because nobody could reach the group afterwards.
+ * Nobody leaves with a debt: not one they owe, which would be left with
+ * nobody to pay it, and not one owed to them, with nobody to say it was paid.
+ * One device of several going isn't the person leaving, so it isn't held to that.
  */
 export function leaveGroup(repo: Repo, g: Group, userId: string) {
   if (repo.accountCount(g.id) === 1) {
     throw conflict('You’re the only one here with an account. Delete the group instead.');
   }
   checkNothingIncoming(repo, userId, g.id);
-  repo.removeAccount(repo.memberForUser(g.id, userId)!.id, userId);
+  const me = repo.memberForUser(g.id, userId)!;
+  const debts = debtsOf(repo, g);
+  if (accountsOf(me).length === 1 && !isSettledUp(debts, me.id)) {
+    throw conflict(
+      debts.some((d) => d.fromMemberId === me.id)
+        ? 'You still owe money in this group. Settle up before you leave.'
+        : 'You’re still owed money in this group. Settle up before you leave.'
+    );
+  }
+  repo.removeAccount(me.id, userId);
 }
 
-/** A group goes only once nothing is owed in it, so deleting it can't erase a debt. */
-export function checkGroupCanGo(repo: Repo, g: Group) {
+/**
+ * Deleting takes the group from everyone, so it is for whoever made it
+ * (canDeleteGroup), and only once nothing is owed in it, so deleting it can't
+ * erase a debt.
+ */
+export function checkGroupCanGo(repo: Repo, g: Group, userId: string) {
+  if (!canDeleteGroup(g, repo.members(g.id), userId)) {
+    const creator = g.createdByMemberId ? repo.member(g.createdByMemberId) : undefined;
+    throw new SattleError(
+      'invalid_input',
+      creator
+        ? `Only ${creator.displayName} can delete this group, because they made it.`
+        : 'Whoever made this group has left it, so it can be deleted only by the last person in it.'
+    );
+  }
   if (repo.settlements(g.id).some(isInProgress)) {
     throw conflict('A payment in this group is still in progress. Wait for it to finish.');
   }

@@ -1,7 +1,8 @@
 /**
  * Settling up inside the app: the Settle up tab, paying someone who has
  * joined over (simulated) Lightning, the blocked sheet and its remedies for
- * someone who hasn't, marking a debt settled from either side, what a payer
+ * someone who hasn't, marking a debt settled from either side or by someone
+ * else in the group, what a payer
  * who uses only rupees is offered, simplifying debts, and a group kept in
  * bitcoin. Pay links have their own file: nothing here sends one, since the
  * group's link is what the person owed shares.
@@ -52,7 +53,7 @@ test.describe('who pays whom, on the group screen', () => {
     const owe = debtCard(a.page, 'You pay Priya');
     await expect(owe.getByText('₹300')).toBeVisible();
     await expect(button(owe, 'Pay')).toBeVisible();
-    // Not theirs to mark: only the person owed can.
+    // Theirs to mark too, but from the sheet Pay opens, not the row.
     await expect(button(owe, 'Mark as settled')).toBeHidden();
     await expect(a.page.getByText(/^You owe ₹300/)).toBeVisible();
 
@@ -67,7 +68,7 @@ test.describe('who pays whom, on the group screen', () => {
 });
 
 test.describe('paying someone who has joined, over Lightning', () => {
-  test('opens straight on the invoice, settles, and both devices see it', async ({ api, device }) => {
+  test('asks how, opens the invoice, settles, and both devices see it', async ({ api, device }) => {
     const { a, b, group, groupName } = await duo(api, device, {
       spends: [{ description: 'Villa', amount: 60_000, paidBy: 'Priya' }],
     });
@@ -77,8 +78,9 @@ test.describe('paying someone who has joined, over Lightning', () => {
     await intoGroup(a, groupName, 'Settle up');
     await button(debtCard(a.page, 'You pay Priya'), 'Pay').click();
 
-    // The one way to pay starts on its own: no rails to choose from.
-    await expect(a.page.getByText('Pay with Lightning', { exact: true })).toBeHidden();
+    // It asks, even with one way to pay: Mark as settled is beside it.
+    await expect(button(a.page, 'Mark as settled')).toBeVisible();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('Waiting for payment').or(a.page.getByText('Pay Priya', { exact: true }))).toBeVisible();
 
     // The invoice is up for about two seconds, so read the screen once it shows.
@@ -129,6 +131,7 @@ test.describe('paying someone who has joined, over Lightning', () => {
     });
     await intoGroup(a, groupName, 'Settle up');
     await button(debtCard(a.page, 'You pay Priya'), 'Pay').click();
+    await button(a.page, 'Pay with Lightning').click();
     await waitForSettled(a.page);
 
     await button(a.page, 'See all').click();
@@ -164,10 +167,12 @@ test.describe('paying someone who has joined, over Lightning', () => {
     await intoGroup(a, groupName, 'Settle up');
     const pay = button(debtCard(a.page, 'You pay Priya'), 'Pay');
     await pay.click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('Waiting for payment').or(a.page.getByText('Pay Priya', { exact: true }))).toBeVisible();
     await closeSheet(a.page);
     await expect(a.page.getByText('Waiting for payment')).toBeHidden();
     await pay.click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('A payment for this is already in progress.')).toBeHidden();
     await expect(a.page.getByText('Settled', { exact: true })).toBeVisible({ timeout: 15_000 });
     const proof = (await a.page.getByText(PREIMAGE).textContent())!;
@@ -189,8 +194,10 @@ test.describe('paying someone who has joined, over Lightning', () => {
 
     await intoGroup(a, groupName, 'Settle up');
     await button(debtCard(a.page, 'You pay Priya'), 'Pay').click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('Waiting for payment').or(a.page.getByText('Pay Priya', { exact: true }))).toBeVisible();
     await button(debtCard(other, 'You pay Priya'), 'Pay').click();
+    await button(other, 'Pay with Lightning').click();
 
     await expect(a.page.getByText('Settled', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(other.getByText('Settled', { exact: true })).toBeVisible({ timeout: 15_000 });
@@ -209,6 +216,7 @@ test.describe('paying someone who has joined, over Lightning', () => {
 
     await intoGroup(a, groupName, 'Settle up');
     await button(debtCard(a.page, 'You pay Priya'), 'Pay').click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(a.page.getByText('Waiting for payment').or(a.page.getByText('Pay Priya', { exact: true }))).toBeVisible();
 
     await button(owed, 'Mark as settled').click();
@@ -379,6 +387,54 @@ test.describe('the payee’s side', () => {
   });
 });
 
+test.describe('anyone else in the group', () => {
+  test('the payer marks a debt to someone who joined settled from the sheet, and both see who did', async ({ api, device }) => {
+    const { a, b, group, groupName } = await duo(api, device, {
+      spends: [{ description: 'Villa', amount: 60_000, paidBy: 'Priya' }],
+    });
+    await intoGroup(a, groupName, 'Settle up');
+    await button(debtCard(a.page, 'You pay Priya'), 'Pay').click();
+    await button(a.page, 'Mark as settled').click();
+    await expect(a.page.getByText('₹300 to Priya is settled.')).toBeVisible();
+    await expect(a.page.getByText('Payment proof')).toBeHidden();
+    await button(a.page, 'Done').click();
+    await expect(a.page.getByText('Everyone’s square. Nothing to pay.', { exact: true })).toBeVisible();
+
+    const [settlement] = await a.api.settlements(group.id);
+    expect(settlement).toMatchObject({ rail: 'manual', status: 'manually_confirmed', amount: 30_000 });
+    await intoGroup(b, groupName, 'Settle up');
+    await button(b.page, 'See all').click();
+    await expect(b.page.getByText('Yash settled with Priya')).toBeVisible();
+    await expect(b.page.getByText(/^Marked as settled by Yash · /)).toBeVisible();
+  });
+
+  test('someone else marks it settled once they’ve said yes, and the history names them', async ({ api, device }) => {
+    // Aman, who never joined, owes Priya. Yash is neither of them.
+    const { a, b, groupName } = await duo(api, device, {
+      others: ['Aman'],
+      spends: [{ description: 'Cab', amount: 40_000, paidBy: 'Priya', between: ['Priya', 'Aman'] }],
+    });
+    await intoGroup(a, groupName, 'Settle up');
+    const card = debtCard(a.page, 'Aman pays Priya');
+    await expect(card.getByText('Paid another way?')).toBeVisible();
+    await expect(button(card, 'Pay')).toBeHidden();
+
+    // Nothing undoes it, so on someone else's debt it asks first.
+    await button(card, 'Mark as settled').click();
+    await expect(card.getByText('Settled outside the app? The group’s history will say you marked it.')).toBeVisible();
+    await button(card, 'Cancel').click();
+    await expect(button(card, 'Mark as settled')).toBeVisible();
+    await button(card, 'Mark as settled').click();
+    await button(card, 'Yes, it’s settled').click();
+    await expect(a.page.getByText('Everyone’s square. Nothing to pay.', { exact: true })).toBeVisible();
+
+    await intoGroup(b, groupName, 'Settle up');
+    await button(b.page, 'See all').click();
+    await expect(b.page.getByText('Aman settled with Priya')).toBeVisible();
+    await expect(b.page.getByText(/^Marked as settled by Yash · /)).toBeVisible();
+  });
+});
+
 test.describe('a payer who uses only rupees', () => {
   test('is pointed at UPI, and reminded that the payee has none', async ({ api, device }) => {
     const { a, groupName } = await duo(api, device, {
@@ -394,11 +450,11 @@ test.describe('a payer who uses only rupees', () => {
     await button(card, 'Options').click();
     await expect(
       a.page.getByText(
-        "Priya hasn't added a UPI ID yet, so there's nowhere to pay them here. Ask them to add one from Account in Sattle. If you paid another way, ask them to mark it settled."
+        "Priya hasn't added a UPI ID yet, so there's nowhere to pay them here. Ask them to add one from Account in Sattle. Or mark it settled if you paid another way."
       )
     ).toBeVisible();
     await expect(button(a.page, 'Add their Lightning address')).toBeHidden();
-    await expect(button(a.page, 'Mark as settled')).toBeHidden();
+    await expect(button(a.page, 'Mark as settled')).toBeVisible();
     await button(a.page, 'Remind Priya').click();
     await expect(a.page.getByText('Copied. Paste it in a chat.')).toBeVisible();
     await expect(button(a.page, 'Remind Priya again')).toBeVisible();
@@ -493,6 +549,7 @@ test.describe('a group kept in bitcoin', () => {
     const card = debtCard(a.page, 'You pay Priya');
     await expect(card.getByText('5,000 sats')).toBeVisible();
     await button(card, 'Pay').click();
+    await button(a.page, 'Pay with Lightning').click();
     await expect(button(a.page, 'Open your wallet')).toBeVisible({ timeout: 8_000 });
     const text = await screenText(a.page);
     expect(text).toContain('Pay Priya');

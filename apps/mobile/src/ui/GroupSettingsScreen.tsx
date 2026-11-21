@@ -6,8 +6,8 @@
  * made all the same.
  *
  * Everything here follows one rule, the server's (groupRules.ts): nobody can
- * undo what someone else is owed. So a group is deleted only once it's
- * settled, and what a person can always do is take themselves out.
+ * undo what someone else is owed. So a group is deleted only by whoever made
+ * it, once it's settled, and everyone else takes themselves out, once they are.
  *
  * The screen says little until asked. What a thing is sits behind Learn more;
  * what an action leaves behind is said between the first tap and the second.
@@ -18,9 +18,12 @@ import { Linking, Platform, Share, StyleSheet, Switch, Text, TextInput, View } f
 
 import {
   accountsOf,
+  canDeleteGroup,
   groupDebts,
   groupLinkPath,
+  isHeldBy,
   isInProgress,
+  isSettledUp,
   UPI_CURRENCY,
   type GroupLink,
   type UpiOnGroupLink,
@@ -63,6 +66,14 @@ interface Settings {
   /** People with an account, the user included. */
   accounts: number;
   settled: boolean;
+  /** Whether the user may delete the group: they made it, or theirs is the only account in it (canDeleteGroup). */
+  canDelete: boolean;
+  /** The name of whoever made the group. Null once they have left it. */
+  creator: string | null;
+  /** The user made the group, so leaving it leaves nobody who can delete it until one account is left. */
+  madeByMe: boolean;
+  /** Nothing the user owes here and nothing owed to them, or they stay in on another device: the server lets them leave. */
+  canLeave: boolean;
   /** A payment in the group hasn't finished. The server won't delete the group until it has. */
   paying: boolean;
   /** The group's link, if someone has made one. */
@@ -101,16 +112,24 @@ export function GroupSettingsScreen({ groupId, onBack, onGone, onReadBack }: Gro
   const data = useMemo((): Omit<Settings, 'link' | 'linkUpi'> | undefined => {
     if (!snap) return undefined;
     const { group, members, expenses, settlements } = snap;
+    const debts = groupDebts(group, expenses, settlements);
+    const userId = view?.user.id ?? '';
+    const me = members.find((m) => isHeldBy(m, userId));
     return {
       name: group.name,
       simplifyDebts: group.simplifyDebts,
       // One account for each device anyone has joined from.
       accounts: members.reduce((n, m) => n + accountsOf(m).length, 0),
-      settled: groupDebts(group, expenses, settlements).length === 0,
+      settled: debts.length === 0,
+      canDelete: canDeleteGroup(group, members, userId),
+      creator: members.find((m) => m.id === group.createdByMemberId)?.displayName ?? null,
+      madeByMe: Boolean(me) && me!.id === group.createdByMemberId,
+      // One device of several going isn't the person leaving, so it isn't held to being settled up.
+      canLeave: !me || accountsOf(me).length > 1 || isSettledUp(debts, me.id),
       paying: settlements.some(isInProgress),
       approveJoins: group.approveJoins,
     };
-  }, [snap]);
+  }, [snap, view?.user.id]);
   const upiShown = snap?.group.currency === UPI_CURRENCY && Boolean(view?.upiProfile.upiId);
   const refresh = () => void appData.sync();
 
@@ -166,12 +185,24 @@ export function GroupSettingsScreen({ groupId, onBack, onGone, onReadBack }: Gro
         <Card style={{ gap: space.md }}>
           {alone ? (
             <Text style={s.body}>Only you have an account here, so delete the group instead.</Text>
+          ) : !data.canLeave ? (
+            <>
+              <Text style={s.body}>Settle up before you leave.</Text>
+              <LearnMore>
+                You can leave once you owe nothing in this group and nothing is owed to you, so that leaving can’t
+                leave a debt behind.
+              </LearnMore>
+            </>
           ) : (
             <>
               <ConfirmButton
                 label="Leave this group"
                 confirmLabel="Yes, leave"
-                confirmHint="Anything owed to you can then be marked settled by whoever owes it."
+                confirmHint={
+                  data.madeByMe
+                    ? 'You made this group. Once you leave, only the last person in it can delete it.'
+                    : 'You’ll stop seeing this group.'
+                }
                 onConfirm={async () => {
                   await keys.run('leave', { groupId }, (k) => client.leaveGroup(groupId, k));
                   forgetGroup(appData, groupId);
@@ -179,7 +210,7 @@ export function GroupSettingsScreen({ groupId, onBack, onGone, onReadBack }: Gro
                 }}
               />
               <LearnMore>
-                You stop seeing this group. Your name and balance stay in it, and the group’s link brings you back.
+                You stop seeing this group. Your name and history stay in it, and the group’s link brings you back.
               </LearnMore>
             </>
           )}
@@ -189,7 +220,13 @@ export function GroupSettingsScreen({ groupId, onBack, onGone, onReadBack }: Gro
       <View>
         <SectionLabel>Delete</SectionLabel>
         <Card style={{ gap: space.md }}>
-          {data.paying ? (
+          {!data.canDelete ? (
+            <Text style={s.body}>
+              {data.creator
+                ? `Only ${data.creator} can delete this group, because they made it.`
+                : 'Whoever made this group has left it, so it can be deleted only by the last person in it.'}
+            </Text>
+          ) : data.paying ? (
             <Text style={s.body}>A payment is still in progress. Delete the group once it has finished.</Text>
           ) : data.settled ? (
             <ConfirmButton

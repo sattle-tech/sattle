@@ -110,7 +110,7 @@ const LIGHTNING_FAQS: Faq[] = [
     question: 'Can I pay someone who hasn’t joined?',
     answer: [
       'Not through Sattle. Someone in the group may have typed a Lightning address for them, but a payment to it would prove nothing about who got the money, so Sattle doesn’t make invoices for it. Send them the group’s link to join; once they’re in and have set up a way to get paid, you can pay them here.',
-      'If you paid them another way, you can mark the debt settled yourself, since they aren’t here to.',
+      'If you paid them another way, you can mark the debt settled yourself.',
     ],
   },
 ];
@@ -185,9 +185,9 @@ function groupFaqs({ lightning, upi }: PayWays, nostr: boolean): Faq[] {
     {
       question: 'Who can mark a debt settled by hand?',
       answer: [
-        'The person who is owed. It is their money, so it is their word to give: on a debt owed to you, Mark as settled records it, with no proof asked. The person paying can do it only when the one they owe hasn’t joined Sattle, since there is nobody else to.',
+        'Anyone in the group, in the app: the person owed, the person paying, or someone else. Mark as settled records it with no proof asked, and nothing undoes it. On a debt you owe, it’s in the sheet that Pay or Options opens. On any other debt it’s under the debt in Who pays whom, and on one between two other people it asks first.',
         'Someone paying from the group’s link who paid another way, in cash or by UPI to a phone number, can tap Mark as paid there. It needs nothing set up by the person owed, only that they’ve joined, and it counts once they confirm it in the app.',
-        'Either way it shows in the group’s history as settled outside the app.',
+        'Either way it shows in the group’s history as settled outside the app, with the name of whoever marked it.',
       ],
     },
     {

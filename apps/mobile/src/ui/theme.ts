@@ -4,7 +4,7 @@
  * Direction: money software, not a crypto app. A cool grey ground with white
  * cards, navy ink rather than pure black, and a single blue accent used only
  * where the user is meant to act: the blue of the payment apps people already
- * trust. Amounts are set in a monospace face throughout — it makes columns of
+ * trust. Amounts are set in fixed-width digits throughout — it makes columns of
  * numbers line up and reads as financial rather than social.
  *
  * Deliberately no orange gradients, no neon, no dark-mode-by-default. The
@@ -22,7 +22,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import { Appearance as NativeAppearance, Platform, StyleSheet, useColorScheme } from 'react-native';
+import { Appearance as NativeAppearance, Platform, StyleSheet, type TextStyle, useColorScheme } from 'react-native';
 
 import { readAppearance, writeAppearance } from './appearanceStore';
 
@@ -191,14 +191,21 @@ export const radius = {
 } as const;
 
 /**
- * Monospace for anything numeric. On Android the system mono is the only
- * safe bet without shipping a font file.
+ * The face for anything numeric. iOS has Menlo. Android's system monospace is
+ * thin and gives its comma a full digit's width ("₹8 , 456"), so Android keeps
+ * its own sans-serif and asks for fixed-width digits (`tabular` below), which
+ * line columns up just the same without shipping a font file. The web does
+ * the same in a browser with no monospace of its own worth having: Chrome on
+ * Android passes over the Apple and Windows faces to the system font, never
+ * reaching that same monospace.
  */
 export const mono = Platform.select({
   ios: 'Menlo',
-  android: 'monospace',
-  default: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  android: 'sans-serif',
+  default: 'ui-monospace, SFMono-Regular, Menlo, Consolas, system-ui, sans-serif',
 });
+
+const tabular: TextStyle['fontVariant'] = ['tabular-nums'];
 
 export const type = {
   display: { fontSize: 28, fontWeight: '600' as const, letterSpacing: -0.4 },
@@ -207,9 +214,9 @@ export const type = {
   body: { fontSize: 15, fontWeight: '400' as const, lineHeight: 21 },
   label: { fontSize: 13, fontWeight: '500' as const },
   caption: { fontSize: 12, fontWeight: '400' as const },
-  amountLg: { fontSize: 30, fontWeight: '500' as const, fontFamily: mono },
-  amountMd: { fontSize: 16, fontWeight: '500' as const, fontFamily: mono },
-  amountSm: { fontSize: 13, fontWeight: '400' as const, fontFamily: mono },
+  amountLg: { fontSize: 30, fontWeight: '500' as const, fontFamily: mono, fontVariant: tabular },
+  amountMd: { fontSize: 16, fontWeight: '500' as const, fontFamily: mono, fontVariant: tabular },
+  amountSm: { fontSize: 13, fontWeight: '400' as const, fontFamily: mono, fontVariant: tabular },
 } as const;
 
 /** Soft, low-contrast elevation. Nothing should float dramatically. */

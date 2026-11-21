@@ -50,7 +50,23 @@ describe('migrations', () => {
   it('records each applied file once', () => {
     const { db } = setup();
     const rows = db.prepare('SELECT name FROM schema_migrations ORDER BY name').all() as { name: string }[];
-    expect(rows.map((r) => r.name)).toEqual(['001_init.sql', '002_pay_links.sql', '003_wallet_connections.sql', '004_payment_hash.sql', '005_invites.sql', '006_nostr_ledger.sql', '007_expense_changes.sql', '008_group_links.sql', '009_group_invites.sql', '010_address_owner.sql', '011_unique_payment_hash.sql', '012_address_invoices.sql', '013_receive_address.sql', '014_upi.sql', '015_join_requests.sql', '016_one_group_link.sql', '017_take_over.sql', '018_nostr_sign_in.sql', '019_history.sql', '020_upi_from_pay_links.sql', '021_upi_reported.sql', '022_simplify_debts.sql', '023_join_without_yes.sql', '024_analytics.sql', '025_join_from_more_devices.sql', '026_mark_paid_from_group_links.sql', '027_group_log.sql']);
+    expect(rows.map((r) => r.name)).toEqual(['001_init.sql', '002_pay_links.sql', '003_wallet_connections.sql', '004_payment_hash.sql', '005_invites.sql', '006_nostr_ledger.sql', '007_expense_changes.sql', '008_group_links.sql', '009_group_invites.sql', '010_address_owner.sql', '011_unique_payment_hash.sql', '012_address_invoices.sql', '013_receive_address.sql', '014_upi.sql', '015_join_requests.sql', '016_one_group_link.sql', '017_take_over.sql', '018_nostr_sign_in.sql', '019_history.sql', '020_upi_from_pay_links.sql', '021_upi_reported.sql', '022_simplify_debts.sql', '023_join_without_yes.sql', '024_analytics.sql', '025_join_from_more_devices.sql', '026_mark_paid_from_group_links.sql', '027_group_log.sql', '028_group_creator.sql']);
+  });
+
+  it('028 names whoever still holds a group’s first member as the one who made it, and nobody where they’ve left', () => {
+    const { db } = setup();
+    // A database from before it: no column, and the first member of one group has left since making it.
+    db.prepare('DELETE FROM schema_migrations WHERE name = ?').run('028_group_creator.sql');
+    db.exec(`
+      ALTER TABLE expense_groups DROP COLUMN created_by_member_id;
+      UPDATE members SET claimed_by_user_id = NULL, status = 'ghost' WHERE id = 'm-flat-yash';
+    `);
+    migrate(db);
+
+    expect(db.prepare('SELECT id, created_by_member_id FROM expense_groups ORDER BY id').all()).toEqual([
+      { id: 'g-flat', created_by_member_id: null },
+      { id: 'g-goa', created_by_member_id: 'm-goa-yash' },
+    ]);
   });
 
   it('010 clears the addresses joined members inherited as ghosts, and keeps ghosts’ own', () => {

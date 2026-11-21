@@ -12,8 +12,11 @@
  *    simplified into as few payments as there can be once the group turns
  *    that on (it starts off), which is switched under Manage alone. Its line
  *    says what simplifying would save. The user's own rows act:
- *    Pay on what they owe; Remind, a payment to confirm (by UPI, or marked as
- *    paid on the group's link), and Mark as settled on what they're owed.
+ *    Pay on what they owe; Remind, and a payment to confirm (by UPI, or marked
+ *    as paid on the group's link), on what they're owed. Every other row has
+ *    Mark as settled, for a debt settled outside the app: anyone in the group
+ *    may record that, and the history says who did. The payer has it in the
+ *    sheet Pay opens.
  * 4. Activity: the expenses by day, each with what it meant for the user.
  *    See all opens the full history, which has payments and changes too.
  *
@@ -32,8 +35,19 @@
  * what the screen is opened for most.
  */
 
+import { StatusBar } from 'expo-status-bar';
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -158,6 +172,18 @@ export function GroupDetailScreen({
   // Its own header, so it says itself what Android's back button and the browser's do.
   useBack(onBack);
 
+  // Whether the cover is still under the status bar, told to CoverStatusBar as the screen scrolls.
+  const coverHeight = useRef(0);
+  const overCover = useRef<((over: boolean) => void) | null>(null);
+  const onCoverLayout = useCallback((e: LayoutChangeEvent) => {
+    coverHeight.current = e.nativeEvent.layout.height;
+  }, []);
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) =>
+      overCover.current?.(e.nativeEvent.contentOffset.y + insets.top / 2 < coverHeight.current),
+    [insets.top]
+  );
+
   // Drawn from what the app already has (AppData): the group is up the moment it's tapped, and
   // the server is asked behind it. A payment can land while this is open (a guest paying a link,
   // someone else settling up), so it's kept current too, every few seconds, without a loading flash.
@@ -258,7 +284,8 @@ export function GroupDetailScreen({
 
   return (
     <View style={s.screen}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <CoverStatusBar tell={overCover} />
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} onScroll={onScroll} scrollEventThrottle={32}>
         <Cover
           name={data.name}
           line={memberLine}
@@ -266,6 +293,7 @@ export function GroupDetailScreen({
           onBack={onBack}
           onPeople={() => setOver({ kind: 'people' })}
           onManage={onManage}
+          onLayout={onCoverLayout}
         />
 
         <View style={s.body}>
@@ -457,9 +485,28 @@ function listNames(names: string[]): string {
 const remindKey = (userId: string, groupId: string, memberId: string) => `${userId}:${groupId}:${memberId}`;
 
 /**
+ * The status bar's icons, white while the cover is under them like everything
+ * else on it, and the theme's own once the cover has scrolled away. The app's
+ * StatusBar (App.tsx) is the theme's, and comes back when this screen goes.
+ * It keeps its own state, so scrolling draws only this.
+ */
+function CoverStatusBar({ tell }: { tell: React.MutableRefObject<((over: boolean) => void) | null> }) {
+  const dark = useColorMode() === 'dark';
+  const [over, setOver] = useState(true);
+  useEffect(() => {
+    tell.current = setOver;
+    return () => {
+      tell.current = null;
+    };
+  }, [tell]);
+  return <StatusBar style={over || dark ? 'light' : 'dark'} />;
+}
+
+/**
  * The top of the group: its colour, with two shapes and a dotted line drawn
  * on it so it reads as the group's own and not a plain bar, then its letter,
- * name and who is in it. White on every cover holds at least 6:1.
+ * name and who is in it. White on every cover holds at least 6:1, and the
+ * status bar's icons are white on it too (CoverStatusBar).
  */
 function Cover({
   name,
@@ -468,6 +515,7 @@ function Cover({
   onBack,
   onPeople,
   onManage,
+  onLayout,
 }: {
   name: string;
   line: string;
@@ -475,13 +523,14 @@ function Cover({
   onBack: () => void;
   onPeople: () => void;
   onManage: () => void;
+  onLayout: (e: LayoutChangeEvent) => void;
 }) {
   const s = useStyles();
   const insets = useSafeAreaInsets();
   const cover = coverFor(name);
   const over = '#00000029';
   return (
-    <View style={[s.cover, { backgroundColor: cover.bg, paddingTop: insets.top + space.md }]}>
+    <View style={[s.cover, { backgroundColor: cover.bg, paddingTop: insets.top + space.md }]} onLayout={onLayout}>
       <CoverArt cover={cover} />
       <View style={s.coverBar}>
         <Glyph name="back" label="Back to groups" onPress={onBack} ink="#FFFFFF" on={over} weight={2.2} />
@@ -523,8 +572,9 @@ function Cover({
 /**
  * One debt in Who pays whom. The user's own act: what they owe has Pay, or
  * Options when the person can't be paid here yet; what they're owed has
- * Remind, a payment someone says they made to answer when there is one, and
- * Mark as settled.
+ * Remind, and a payment someone says they made to answer when there is one.
+ * Every debt but the user's own has Mark as settled, unless a payment someone
+ * says they made is waiting on it. The user's own has it behind Pay.
  */
 function DebtRow({
   debt,
@@ -607,9 +657,8 @@ function DebtRow({
           onToast={onToast}
         />
       )}
-      {/* Nothing to send from here: they pay from the group's link, under Add people. */}
-      {mineIn && !claimWaiting && <MarkSettled debt={debt} onSettled={onChanged} held={held} />}
       {cannotReceive && payee && <Text style={s.rowNote}>{cannotReceiveNote(payee, mode, ways)}</Text>}
+      {!mineOut && !claimWaiting && <MarkSettled debt={debt} owedToMe={mineIn} onSettled={onChanged} held={held} />}
     </View>
   );
 }
@@ -1490,17 +1539,28 @@ function AddMember({
 }
 
 /**
- * The payee's side of "paid in cash". Only they can record it for someone
- * who has joined, so this is where it lives; the payer's sheet tells them to
- * ask. One tap: it is their money, so it is their word to give, and the
- * history says whose it was.
+ * "Paid another way": a debt settled outside the app, in cash or let go.
+ * Anyone in the group may record it, and the history says who did. On what's
+ * owed to the user it is one tap, since it is their money to give. Anyone
+ * else's debt asks first: nothing undoes a settlement, and a stray tap would
+ * wipe out what someone is owed.
  */
-function MarkSettled({ debt, onSettled, held }: { debt: Debt; onSettled: () => void; held: () => boolean }) {
+function MarkSettled({
+  debt,
+  owedToMe,
+  onSettled,
+  held,
+}: {
+  debt: Debt;
+  owedToMe: boolean;
+  onSettled: () => void;
+  held: () => boolean;
+}) {
   const s = useStyles();
   const client = useClient();
   const appData = useAppData();
   const keys = useActionKeys();
-  const [state, setState] = useState<'idle' | 'busy' | { failed: string }>('idle');
+  const [state, setState] = useState<'idle' | 'asking' | 'busy' | { failed: string }>('idle');
 
   const settle = async () => {
     if (held()) return;
@@ -1523,13 +1583,30 @@ function MarkSettled({ debt, onSettled, held }: { debt: Debt; onSettled: () => v
   };
 
   return (
-    <View style={s.under}>
-      <View style={s.settledRow}>
-        <Text style={s.note}>Paid you another way?</Text>
-        <Pressable onPress={settle} disabled={state === 'busy'} accessibilityRole="button" style={s.linkBtn}>
-          <Text style={[s.link, state === 'busy' && { opacity: 0.4 }]}>Mark as settled</Text>
-        </Pressable>
-      </View>
+    <View style={[s.under, !owedToMe && s.settledUnder]}>
+      {state === 'asking' ? (
+        <View style={s.settledRow}>
+          <Text style={s.note}>Settled outside the app? The group’s history will say you marked it.</Text>
+          <Pressable onPress={settle} accessibilityRole="button" style={s.linkBtn}>
+            <Text style={s.link}>Yes, it’s settled</Text>
+          </Pressable>
+          <Pressable onPress={() => setState('idle')} accessibilityRole="button" style={s.linkBtn}>
+            <Text style={[s.link, s.muted]}>Cancel</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={s.settledRow}>
+          <Text style={s.note}>{owedToMe ? 'Paid you another way?' : 'Paid another way?'}</Text>
+          <Pressable
+            onPress={owedToMe ? settle : () => !held() && setState('asking')}
+            disabled={state === 'busy'}
+            accessibilityRole="button"
+            style={s.linkBtn}
+          >
+            <Text style={[s.link, state === 'busy' && { opacity: 0.4 }]}>Mark as settled</Text>
+          </Pressable>
+        </View>
+      )}
       {typeof state === 'object' && <Text style={s.error}>{state.failed}</Text>}
     </View>
   );
@@ -1727,7 +1804,7 @@ const useStyles = makeStyles((color) => ({
   standingAmount: { ...type.amountLg, fontSize: 26 },
   standingSub: { fontSize: 13, color: color.inkMuted },
   squareRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  num: { fontFamily: type.amountSm.fontFamily },
+  num: { fontFamily: type.amountSm.fontFamily, fontVariant: type.amountSm.fontVariant },
 
   card: {
     backgroundColor: color.surface,
@@ -1759,6 +1836,9 @@ const useStyles = makeStyles((color) => ({
   debtAmount: { ...type.amountMd, fontSize: 15, fontWeight: '600' },
   // Lines up under the names: row padding, face, gap.
   under: { marginLeft: space.lg + 32 + space.sm + 2, marginRight: space.md, marginBottom: space.sm, gap: space.xs },
+  // Up into the bottom of the row's own height, which has nothing in it there: the link is about that row.
+  // Not on a debt owed to the user: that row has Remind, and the link would lie over the bottom of it.
+  settledUnder: { marginTop: -space.md },
   settledRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   rowNote: { ...type.caption, color: color.inkMuted, marginLeft: space.lg + 32 + space.sm + 2, marginBottom: space.sm },
   claim: {
@@ -1833,7 +1913,7 @@ const useStyles = makeStyles((color) => ({
   tableHead: { backgroundColor: color.surfaceSunken, borderTopWidth: 0 },
   tableHeadText: { fontSize: 12, fontWeight: '600', color: color.inkMuted },
   tableCell: { flex: 1, fontSize: 14, color: color.ink },
-  tableNum: { textAlign: 'right', fontFamily: type.amountSm.fontFamily },
+  tableNum: { textAlign: 'right', fontFamily: type.amountSm.fontFamily, fontVariant: type.amountSm.fontVariant },
   right: { textAlign: 'right' },
   tableStrong: { fontWeight: '600' },
 

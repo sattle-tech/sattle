@@ -17,8 +17,8 @@
  * nothing; when the person owed confirms it, that settlement is tagged with
  * the token too, so the link shows it paid.
  *
- * A debt can be settled without the link: marked settled by the person owed,
- * or paid by UPI from the app. The link shows that settlement then, so a page
+ * A debt can be settled without the link: marked settled by anyone in the
+ * group, or paid by UPI from the app. The link shows that settlement then, so a page
  * left open says it's settled instead of still offering to be paid.
  *
  * With both on offer, nothing is minted until the payer says which: an

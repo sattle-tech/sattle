@@ -16,7 +16,9 @@ import {
   buildQuote,
   accountsOf,
   canChangeExpense,
+  canDeleteGroup,
   isHeldBy,
+  isSettledUp,
   canReceive,
   groupDebts,
   isInProgress,
@@ -197,7 +199,7 @@ export class MockClient implements SattleClient {
     return g;
   }
 
-  /** Same rules as the server's checkPayer and checkManualRecorder. */
+  /** The server's rules: only the payer pays (checkPayer); anyone in the group may mark a debt settled. */
   private checkCaller(input: { fromMemberId: string; toMemberId: string }, as: 'payer' | 'manual') {
     const me = fixtures.currentUser.id;
     const payer = this.members.find((m) => m.id === input.fromMemberId);
@@ -205,10 +207,6 @@ export class MockClient implements SattleClient {
     if (!payer || !payee) throw new SattleError('not_found', 'That member isn’t in this group.');
     if (as === 'payer' && !isHeldBy(payer, me)) {
       throw new SattleError('invalid_input', `Only ${payer.displayName} can pay this.`);
-    }
-    if (as === 'manual' && !isHeldBy(payee, me) && (payee.claimedByUserId || !isHeldBy(payer, me))) {
-      const who = payee.claimedByUserId ? payee : payer;
-      throw new SattleError('invalid_input', `Only ${who.displayName} can mark this as settled.`);
     }
   }
 
@@ -314,6 +312,8 @@ export class MockClient implements SattleClient {
         group.memberIds.push(member.id);
       };
       add({ displayName: me.displayName, status: 'joined', claimedByUserId: me.id });
+      // Whoever makes a group is the one who can delete it.
+      group.createdByMemberId = group.memberIds[0];
       for (const n of input.memberNames) add({ displayName: n.trim(), status: 'ghost' });
       this.groups.unshift(group);
       return group;
@@ -1253,6 +1253,16 @@ export class MockClient implements SattleClient {
     return this.call(() => {
       const g = this.findGroup(groupId);
       const mine = (x: { groupId: string }) => x.groupId === groupId;
+      // As the server: only whoever made the group, or the only account left in one nobody made.
+      if (!canDeleteGroup(g, this.members.filter(mine), fixtures.currentUser.id)) {
+        const creator = this.members.find((m) => m.id === g.createdByMemberId);
+        throw new SattleError(
+          'invalid_input',
+          creator
+            ? `Only ${creator.displayName} can delete this group, because they made it.`
+            : 'Whoever made this group has left it, so it can be deleted only by the last person in it.'
+        );
+      }
       if (this.settlements.some((s) => mine(s) && isInProgress(s))) {
         throw new SattleError('conflict', 'A payment in this group is still in progress. Wait for it to finish.');
       }
@@ -1307,6 +1317,16 @@ export class MockClient implements SattleClient {
       this.checkNothingIncoming(g.id);
       // As the server: the member stays with their other devices, the oldest first, or is a ghost again.
       const rest = accountsOf(me).filter((a) => a !== fixtures.currentUser.id);
+      // Nobody leaves with a debt. One device of several going isn't the person leaving.
+      const debts = this.debtsOf(g.id);
+      if (rest.length === 0 && !isSettledUp(debts, me.id)) {
+        throw new SattleError(
+          'conflict',
+          debts.some((d) => d.fromMemberId === me.id)
+            ? 'You still owe money in this group. Settle up before you leave.'
+            : 'You’re still owed money in this group. Settle up before you leave.'
+        );
+      }
       if (rest.length > 0) {
         me.claimedByUserId = rest[0];
         if (rest.length > 1) me.alsoHeldBy = rest.slice(1);
@@ -1317,6 +1337,8 @@ export class MockClient implements SattleClient {
       }
       delete me.claimedByUserId;
       me.status = 'ghost';
+      // Having made the group isn't handed back with the name: whoever picks it next didn't make it.
+      if (g.createdByMemberId === me.id) delete g.createdByMemberId;
       // Only now are they gone: one device of several leaving isn't the person leaving.
       this.noteGroupChange(g.id, { kind: 'left', name: me.displayName }, me.id);
       // What they chose about this group's link was theirs, so it goes with them.
