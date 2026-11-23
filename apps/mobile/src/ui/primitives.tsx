@@ -22,7 +22,7 @@ import {
   type ViewStyle,
   View,
 } from 'react-native';
-import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext, initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { describeRateSource, formatAmount, formatRate, formatSats, isBitcoin, SattleError, type Quote } from '@sattle/core';
@@ -71,8 +71,8 @@ export function Screen({
 }) {
   const s = useStyles();
   const insets = useSafeAreaInsets();
-  // While someone is typing, the footer steps aside: on Android the window shrinks to the
-  // keyboard, and a bar fixed to its bottom would sit over what little is left to type in.
+  // While someone is typing, the footer steps aside: the screen ends at the keyboard (KeyboardBar),
+  // and a bar fixed to its bottom would take up what little room is left to type in.
   const typing = useKeyboardUp();
   // Android's back button and the browser's do what the arrow does.
   useBack(onBack);
@@ -117,6 +117,29 @@ export function Screen({
         {children}
       </ScrollView>
       {bar && <View style={[s.footer, { paddingBottom: space.md + insets.bottom }]}>{bar}</View>}
+      <KeyboardBar />
+    </View>
+  );
+}
+
+/**
+ * The room the keyboard takes, kept at the bottom of a screen's column, or a sheet's, so what's
+ * above ends where the keyboard begins and nothing is left under it. Goes last. Nothing while the
+ * keyboard is down, or in a browser.
+ *
+ * On an iPhone it's also a strip along the top of the keyboard with one button, which puts the
+ * keyboard away: an iPhone's keyboard has no key for that. Android's has one, beside the
+ * navigation buttons, and the back button does it too.
+ */
+export function KeyboardBar() {
+  const color = useColors();
+  const s = useStyles();
+  const keyboard = useKeyboardCover();
+  if (!keyboard) return null;
+  if (Platform.OS !== 'ios') return <View style={{ height: keyboard }} />;
+  return (
+    <View style={[s.keyboardBar, { marginBottom: keyboard }]}>
+      <Glyph name="keyboardDown" label="Close keyboard" onPress={() => Keyboard.dismiss()} ink={color.inkMuted} weight={1.8} />
     </View>
   );
 }
@@ -138,22 +161,28 @@ export function useKeyboardUp() {
 }
 
 /**
- * iOS only: how far up the screen the on-screen keyboard reaches, 0 while it's
- * down. Android's window shrinks to the keyboard; on iOS nothing moves out of
- * its way unless told to.
+ * How far up the screen the on-screen keyboard reaches, 0 while it's down. It comes up over the
+ * app and nothing moves out of its way unless told to: on an iPhone always, and on Android too,
+ * where the app draws edge to edge, under the system bars, and so the window isn't shrunk to make
+ * room. Always 0 in a browser, which doesn't say.
  */
-function useKeyboardHeightIos() {
+export function useKeyboardCover() {
   const [height, setHeight] = useState(0);
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    const shown = Keyboard.addListener('keyboardWillShow', (e) => setHeight(e.endCoordinates.height));
-    const hidden = Keyboard.addListener('keyboardWillHide', () => setHeight(0));
+    if (Platform.OS === 'web') return;
+    // iOS says before the keyboard moves, so what's above is in place by the time it arrives. Android only says after.
+    const ios = Platform.OS === 'ios';
+    const shown = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', (e) => setHeight(e.endCoordinates.height));
+    const hidden = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setHeight(0));
     return () => {
       shown.remove();
       hidden.remove();
     };
   }, []);
-  return height;
+  // Android leaves the navigation bar out of the keyboard's height, though the keyboard sits on it. The
+  // bar's height is read from the window, not from useSafeAreaInsets: under the tab bar that says the
+  // tab bar's (AboveBottomBar).
+  return height && Platform.OS === 'android' ? height + (initialWindowMetrics?.insets.bottom ?? 0) : height;
 }
 
 /**
@@ -379,8 +408,8 @@ export function Sheet({
 }) {
   const s = useStyles();
   const insets = useSafeAreaInsets();
-  // On an iPhone the keyboard comes up over the sheet, so the sheet rides up on it: what's being typed stays in view.
-  const keyboard = useKeyboardHeightIos();
+  // The keyboard comes up over the sheet, so the sheet rides up on it (KeyboardBar): what's being typed stays in view.
+  const keyboard = useKeyboardCover();
   // The back button closes it before it goes back a screen. One that opened by itself, with no tap, waits for one: see useTapped.
   const tapped = useTapped();
   useBack(visible && tapped ? onClose : undefined, true);
@@ -401,7 +430,10 @@ export function Sheet({
       {/* A Modal covers the whole window, past the app's column; the sheet stays as wide as the column, centred under it. */}
       <View style={s.sheetFrame} pointerEvents="box-none" importantForAccessibility={under}>
         {/* The sheet runs to the bottom edge; what's in it stops above the home indicator, or the keyboard. */}
-        <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, keyboard) }]}>{children}</View>
+        <View style={[s.sheet, { paddingBottom: keyboard ? 0 : insets.bottom }]}>
+          {children}
+          <KeyboardBar />
+        </View>
       </View>
       {overlay ? (
         // iOS: what's beside it, the backdrop and the sheet, is passed over while it's up.
@@ -472,6 +504,9 @@ const GLYPHS = {
   chevronDown: 'M6 9l6 6 6-6',
   chevronRight: 'M9 5l7 7-7 7',
   info: 'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18M12 11v6M12 7.5v.5',
+  // A keyboard, and an arrow down under it.
+  keyboardDown:
+    'M5 3h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM7 7.5h.01M10.3 7.5h.01M13.7 7.5h.01M17 7.5h.01M8 11.5h8M9 18.5l3 3 3-3',
 } as const;
 
 export type GlyphName = keyof typeof GLYPHS;
@@ -948,6 +983,14 @@ const useStyles = makeStyles((color) => ({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: color.line,
     backgroundColor: color.paper,
+  },
+  // No fill of its own: it's the screen's colour on a screen and the sheet's in a sheet.
+  keyboardBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.line,
   },
 
   card: {

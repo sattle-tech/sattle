@@ -8,8 +8,8 @@
  * Names only. Nobody here needs the app, an email or a phone number: they
  * start as ghosts, and the group's link is how they see what they owe, pay
  * it, and join. Asking for more up front is where Splitwise loses the people
- * who never install. So creating it goes straight to that link, ready to
- * share.
+ * who never install. Creating it opens the group; its link is there, under
+ * Add people.
  *
  * The group is kept in the currency its maker uses. Only someone who uses
  * both rupees and bitcoin is asked, from the chip on the cover, which opens
@@ -23,11 +23,16 @@
  *
  * The names can be typed straight down without leaving the keyboard: Enter
  * on the group's name goes to the people, and Enter on a person adds them
- * and stays there for the next.
+ * and stays there for the next, with the field kept in view as the list
+ * above it grows.
+ *
+ * The keyboard comes up over the bottom of the screen, Create included. So
+ * while it's up the screen ends above it (KeyboardBar, which on an iPhone
+ * also puts it away), and Create is back once it's down.
  */
 
 import React, { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isBitcoin } from '@sattle/core';
@@ -39,8 +44,17 @@ import { useActionKeys, useClient } from '../react/SattleProvider';
 import { useBack } from './backNavigation';
 import { CoverArt } from './CoverArt';
 import { currencyNames } from './CurrencyPicker';
-import { Avatar, Button, ErrorState, Glyph, Pill } from './primitives';
+import { Avatar, Button, ErrorState, Glyph, KeyboardBar, Pill, useKeyboardCover } from './primitives';
 import { coverFor, initialOf, makeStyles, radius, shadow, space, type, useColors } from './theme';
+
+/**
+ * On an iPhone the name field's own placeholder was cut off along the top at this size: "Name
+ * your group" lost the top of its N. There it is drawn here instead, as text over the field, and
+ * the field keeps its own, unseen, for a screen reader.
+ */
+const OWN_PLACEHOLDER = Platform.OS === 'ios';
+/** The placeholder's ink, on the cover's colour. */
+const PLACEHOLDER_INK = '#FFFFFFCC';
 
 export interface NewGroupScreenProps {
   /** A name of the kind picked on Home, suggested in the name field. */
@@ -66,6 +80,10 @@ export function NewGroupScreen({ example, onBack, onCreated }: NewGroupScreenPro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const draftField = useRef<TextInput>(null);
+  const scroll = useRef<ScrollView>(null);
+  const addingPeople = useRef(false);
+  // The keyboard is up, over the foot of the screen.
+  const keyboardOver = useKeyboardCover() > 0;
   // Its own header, so it says itself what Android's back button and the browser's do.
   useBack(onBack);
 
@@ -75,6 +93,12 @@ export function NewGroupScreen({ example, onBack, onCreated }: NewGroupScreenPro
   // Whoever is typed but not yet added is in too: they were about to be.
   const everyone = [...people, ...(draft.trim() ? [draft.trim()] : [])];
   const total = everyone.length + 1;
+
+  // While names are going in, the field they're typed in stays in view: each one added pushes it
+  // down a row, and on a phone the keyboard leaves little room below.
+  const keepAddInView = () => {
+    if (addingPeople.current) scroll.current?.scrollToEnd({ animated: true });
+  };
 
   const add = () => {
     const n = draft.trim();
@@ -109,7 +133,14 @@ export function NewGroupScreen({ example, onBack, onCreated }: NewGroupScreenPro
 
   return (
     <View style={s.screen}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scroll}
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        // When a name is added, and when the keyboard comes up and leaves less room.
+        onContentSizeChange={keepAddInView}
+        onLayout={keepAddInView}
+      >
         <View style={[s.cover, { backgroundColor: cover.bg, paddingTop: insets.top + space.md }]}>
           <CoverArt cover={cover} />
           <View style={s.bar}>
@@ -123,18 +154,31 @@ export function NewGroupScreen({ example, onBack, onCreated }: NewGroupScreenPro
             <View style={s.tile} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
               <Text style={[s.tileLetter, { color: cover.bg }]}>{initialOf(name)}</Text>
             </View>
-            <TextInput
-              style={s.nameInput}
-              value={name}
-              onChangeText={setName}
-              placeholder={example ?? 'Name your group'}
-              placeholderTextColor="#FFFFFFCC"
-              accessibilityLabel="Group name"
-              autoFocus
-              returnKeyType="next"
-              submitBehavior="submit"
-              onSubmitEditing={() => draftField.current?.focus()}
-            />
+            <View style={s.nameField}>
+              <TextInput
+                style={s.nameInput}
+                value={name}
+                onChangeText={setName}
+                placeholder={example ?? 'Name your group'}
+                placeholderTextColor={OWN_PLACEHOLDER ? 'transparent' : PLACEHOLDER_INK}
+                accessibilityLabel="Group name"
+                autoFocus
+                returnKeyType="next"
+                submitBehavior="submit"
+                onSubmitEditing={() => draftField.current?.focus()}
+              />
+              {OWN_PLACEHOLDER && !name && (
+                <View
+                  style={s.namePlaceholder}
+                  pointerEvents="none"
+                  accessibilityElementsHidden
+                >
+                  <Text style={s.namePlaceholderText} numberOfLines={1}>
+                    {example ?? 'Name your group'}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
           <View style={s.chips}>
             <View style={s.chip}>
@@ -195,6 +239,13 @@ export function NewGroupScreen({ example, onBack, onCreated }: NewGroupScreenPro
                 style={s.addInput}
                 value={draft}
                 onChangeText={setDraft}
+                onFocus={() => {
+                  addingPeople.current = true;
+                  keepAddInView();
+                }}
+                onBlur={() => {
+                  addingPeople.current = false;
+                }}
                 onSubmitEditing={add}
                 returnKeyType={draft.trim() ? 'next' : 'done'}
                 // With a name in it the keyboard stays up for the next one. The browser reads
@@ -227,9 +278,12 @@ export function NewGroupScreen({ example, onBack, onCreated }: NewGroupScreenPro
         </View>
       </ScrollView>
 
-      <View style={[s.footer, { paddingBottom: space.md + insets.bottom }]}>
-        <Button label="Create and share the link" variant="primary" busy={busy} onPress={submit} />
-      </View>
+      {!keyboardOver && (
+        <View style={[s.footer, { paddingBottom: space.md + insets.bottom }]}>
+          <Button label="Create" variant="primary" busy={busy} onPress={submit} />
+        </View>
+      )}
+      <KeyboardBar />
     </View>
   );
 }
@@ -250,11 +304,13 @@ const useStyles = makeStyles((color) => ({
     ...shadow,
   },
   tileLetter: { fontSize: 30, fontWeight: '800' },
+  nameField: { flex: 1, minWidth: 0 },
   nameInput: {
-    flex: 1,
-    minWidth: 0,
     height: 48,
+    // Android pads a field top and bottom from its theme unless told not to, and at this size
+    // that left too little height for the text: it was cut off along the top and bottom.
     paddingHorizontal: 0,
+    paddingVertical: 0,
     borderBottomWidth: 2,
     borderBottomColor: '#FFFFFF66',
     fontSize: 28,
@@ -262,6 +318,9 @@ const useStyles = makeStyles((color) => ({
     letterSpacing: -0.6,
     color: '#FFFFFF',
   },
+  // Over the field, down to its underline, set as the field sets what's typed.
+  namePlaceholder: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 2, justifyContent: 'center' },
+  namePlaceholderText: { fontSize: 28, fontWeight: '700', letterSpacing: -0.6, color: PLACEHOLDER_INK },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   chip: {
     flexDirection: 'row',

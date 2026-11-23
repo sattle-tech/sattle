@@ -219,8 +219,8 @@ export async function makeAccount(
 
 /**
  * New group, filled in and created, from the groups list. Resolves on the
- * group screen, with the Add people it opens on closed again. `people` are
- * everyone but the person making it.
+ * group screen, which is what creating it opens. `people` are everyone but
+ * the person making it.
  */
 export async function createGroup(
   page: Page,
@@ -234,8 +234,8 @@ export async function createGroup(
     await page.getByPlaceholder('Add a name').fill(name);
     await page.getByPlaceholder('Add a name').press('Enter');
   }
-  await button(page, 'Create and share the link').click();
-  await closePeople(page);
+  await button(page, 'Create').click();
+  await expect(groupHeader(page)).toBeVisible();
   await expect(page.getByText('No expenses yet', { exact: true })).toBeVisible();
   // New groups start without it; the tests were written for groups that simplify unless they say not to.
   if (input.simplifyDebts !== false) {
