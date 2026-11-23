@@ -108,10 +108,6 @@ import { coverFor, initialOf, makeStyles, radius, shadow, space, type, useColorM
 
 export interface GroupDetailScreenProps {
   groupId: string;
-  /** Open on Add people, with the link ready to send: the group was just made. */
-  sharing?: boolean;
-  /** Add people opened because of `sharing`. */
-  onShared?: () => void;
   onBack: () => void;
   /**
    * Opens the form for a new expense. `userId` is who is signed in: the payer unless they say
@@ -148,8 +144,6 @@ const reminded = new Map<string, number>();
 
 export function GroupDetailScreen({
   groupId,
-  sharing,
-  onShared,
   onBack,
   onAddExpense,
   onEditExpense,
@@ -165,9 +159,7 @@ export function GroupDetailScreen({
   const mode = usePaymentMode();
   const prefs = useCurrencyPrefs();
   const insets = useSafeAreaInsets();
-  const [over, setOver] = useState<Over>(sharing ? { kind: 'people' } : null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => (sharing ? onShared?.() : undefined), []);
+  const [over, setOver] = useState<Over>(null);
   const [toast, showToast] = useToast();
   // Its own header, so it says itself what Android's back button and the browser's do.
   useBack(onBack);

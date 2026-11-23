@@ -46,11 +46,8 @@ type Route =
   | { name: 'groups' }
   /** `example`: a name of the kind picked on Home, suggested in the name field. */
   | { name: 'newGroup'; example?: string }
-  /**
-   * `sharing`: just made, so it opens on Add people with the link ready to send.
-   * `from`: opened from Activity, which is where back goes.
-   */
-  | { name: 'group'; groupId: string; sharing?: boolean; from?: 'activity' }
+  /** `from`: opened from Activity, which is where back goes. */
+  | { name: 'group'; groupId: string; from?: 'activity' }
   | {
       name: 'addExpense';
       groupId: string;
@@ -253,7 +250,7 @@ function Navigator({
             onBack={() => setRoute({ name: 'groups' })}
             onCreated={(groupId) => {
               refresh();
-              setRoute({ name: 'group', groupId, sharing: true });
+              setRoute({ name: 'group', groupId });
             }}
           />
         );
@@ -263,9 +260,6 @@ function Navigator({
           <GroupDetailScreen
             key={route.groupId}
             groupId={route.groupId}
-            sharing={route.sharing}
-            // Once, on arriving: coming back to the group later shouldn't open it again.
-            onShared={() => route.sharing && setRoute({ name: 'group', groupId: route.groupId })}
             onBack={() => setRoute(route.from === 'activity' ? { name: 'activity' } : { name: 'groups' })}
             onAddExpense={(members, currency, userId, groupName, draft) =>
               setRoute({ name: 'addExpense', groupId: route.groupId, groupName, members, currency, userId, draft })

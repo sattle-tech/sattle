@@ -33,7 +33,7 @@ test.describe('New group', () => {
   test('refuses a group with no name', async ({ person }) => {
     const { page } = await person('Yash');
     await button(page, 'New group').click();
-    await button(page, 'Create and share the link').click();
+    await button(page, 'Create').click();
     await expect(page.getByText('Give the group a name.')).toBeVisible();
     await expect(page.getByPlaceholder('Name your group')).toBeVisible();
   });
@@ -50,8 +50,8 @@ test.describe('New group', () => {
     await page.getByPlaceholder('Add a name').press('Enter');
     await page.getByPlaceholder('Add a name').fill('Aman');
     await expect(page.getByText('3 people', { exact: true })).toBeVisible();
-    await button(page, 'Create and share the link').click();
-    await closePeople(page);
+    await button(page, 'Create').click();
+    await expect(groupHeader(page)).toBeVisible();
     await expect(memberLine(page, 'You, Priya, Aman')).toBeVisible();
     const [group] = await yash.api.groups();
     expect(group.name).toBe('Goa trip');
@@ -102,8 +102,8 @@ test.describe('New group', () => {
     await expect(page.getByText('Bitcoin, in sats', { exact: true })).toBeVisible();
     await expect(page.getByText('Amounts are in sats, and people settle up over Lightning. This can’t be changed later.')).toBeVisible();
     await page.getByPlaceholder('Name your group').fill('Sats trip');
-    await button(page, 'Create and share the link').click();
-    await closePeople(page);
+    await button(page, 'Create').click();
+    await expect(groupHeader(page)).toBeVisible();
     expect((await yash.api.groups())[0].currency).toBe('BTC');
   });
 
@@ -113,32 +113,29 @@ test.describe('New group', () => {
     await button(page, 'New group').click();
     await expect(page.getByRole('switch', { name: 'Simplify debts' })).toHaveCount(0);
     await page.getByPlaceholder('Name your group').fill('Flat');
-    await button(page, 'Create and share the link').click();
-    await closePeople(page);
+    await button(page, 'Create').click();
+    await expect(groupHeader(page)).toBeVisible();
     expect((await yash.api.groups())[0].simplifyDebts).toBe(false);
   });
 
-  test('a new group opens on its link, and is empty everywhere it shows', async ({ person }) => {
+  test('a new group opens on the group, not on its link, and is empty everywhere it shows', async ({ person }) => {
     const { page } = await person('Yash');
     await button(page, 'New group').click();
     await page.getByPlaceholder('Name your group').fill('Goa trip');
     await page.getByPlaceholder('Add a name').fill('Priya');
     await page.getByPlaceholder('Add a name').press('Enter');
     await page.getByPlaceholder('Add a name').fill('Aman');
-    await button(page, 'Create and share the link').click();
-    await expect(page.getByText('Share the group link', { exact: true })).toBeVisible();
-    await expect(page.getByText(/\/g\/[A-Za-z0-9_-]+$/)).toBeVisible();
-    await closePeople(page);
+    await button(page, 'Create').click();
+    await expect(groupHeader(page)).toBeVisible();
+    await expect(page.getByText('Share the group link', { exact: true })).toBeHidden();
     await expect(page.getByText('Goa trip', { exact: true })).toBeVisible();
     await expect(memberLine(page, 'You, Priya, Aman')).toBeVisible();
     await expect(page.getByText('No expenses yet')).toBeVisible();
     await expect(page.getByText('Add the first one and you’ll see who owes what.')).toBeVisible();
     await expect(page.getByText('Nothing yet. Add the first one below.')).toBeVisible();
     await expect(page.getByText('Who pays whom', { exact: true })).toHaveCount(0);
-    // Back on the group later, Add people stays closed.
-    await openManage(page);
-    await back(page);
-    await expect(page.getByText('Share the group link', { exact: true })).toBeHidden();
+    // The link is a tap away, under Add people.
+    expect(await inviteLink(page)).toMatch(/\/g\/[A-Za-z0-9_-]+$/);
     await back(page);
     await expect(page.getByText('Nothing to settle yet.', { exact: false })).toBeVisible();
     await expect(page.getByText('3 people', { exact: true })).toBeVisible();
@@ -170,8 +167,8 @@ test.describe('New group', () => {
     const { page } = yash;
     await button(page, 'New group').click();
     await page.getByPlaceholder('Name your group').fill('Once');
-    await button(page, 'Create and share the link').dblclick();
-    await closePeople(page);
+    await button(page, 'Create').dblclick();
+    await expect(groupHeader(page)).toBeVisible();
     expect(await yash.api.groups()).toHaveLength(1);
   });
 });

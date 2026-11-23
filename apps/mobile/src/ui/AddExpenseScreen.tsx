@@ -66,6 +66,7 @@ import {
   ConfirmButton,
   ErrorState,
   Glyph,
+  KeyboardBar,
   Pill,
   Segmented,
   Sheet,
@@ -590,6 +591,7 @@ export function AddExpenseScreen({
           />
         )}
       </ScrollView>
+      <KeyboardBar />
 
       <Sheet
         visible={details}
@@ -1008,6 +1010,7 @@ function ItemSplit({
           }
         />
       </ScrollView>
+      <KeyboardBar />
     </View>
   );
 }
